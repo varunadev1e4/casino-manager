@@ -46,11 +46,12 @@ nav button{flex:1;max-width:110px;padding:5px 2px;font-size:11px;line-height:1.1
 .step{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:flex-end;min-width:0}
 .who{opacity:0;transform:translateY(24px);transition:.7s;text-align:center;margin-bottom:8px}.who.show{opacity:1;transform:none}
 .blk{width:100%;height:0;overflow:hidden;border:3px solid #111;border-bottom:0;border-radius:12px 12px 0 0;color:#111;font:400 44px Bungee,Impact,sans-serif;text-align:center;padding-top:8px;transition:height 1.2s cubic-bezier(.2,.9,.3,1.15)}
+#cardv{position:fixed;inset:0;z-index:28;background:#000d;display:none;flex-direction:column;align-items:center;justify-content:center;padding:12px;gap:10px}#cardv img{max-height:74vh;max-width:92vw;border-radius:18px;box-shadow:0 10px 40px #000}
 #sheet{display:none}
 @media print{body{background:#fff;padding:0}body>*:not(#sheet){display:none!important}#sheet{display:block;font:14px 'Space Grotesk',Arial,sans-serif;color:#000}#sheet h1{font-size:26px;margin:0 0 4px}#sheet h2{font-size:18px;margin:18px 0 6px}#sheet table{width:100%;border-collapse:collapse}#sheet td,#sheet th{border-bottom:1px solid #999;padding:4px 6px;text-align:left}@page{margin:14mm}}
 .dot{width:14px;height:14px;border-radius:50%;border:2px solid #111;background:#7bd88f;display:inline-block}.dot.off{background:#ff5a4f}.top{flex-wrap:wrap}
 </style></head>
-<body><div id="app"></div><div id="toast"></div><div id="cer"></div><div id="flash"></div><div id="sheet"></div>
+<body><div id="app"></div><div id="toast"></div><div id="cer"></div><div id="flash"></div><div id="sheet"></div><div id="cardv"></div>
 <div id="modal"><div class="card"><div id="mm"></div><input id="mi" autocomplete="off"><div class="row" style="justify-content:flex-end"><button id="mn">Cancel</button><button id="my" class="g">Confirm</button></div></div></div>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
 <script>
@@ -172,7 +173,7 @@ function pstats(id){
   let streak=0;for(const r of rows){if(r.win===rows[0].win)streak++;else break}
   return{rows,n:rows.length,w:rows.filter(r=>r.win).length,net:rows.reduce((a,r)=>a+r.net,0),streak,sw:rows[0]?.win}}
 function pdetail(id){const p=S.players.find(x=>x.id===id),st=pstats(id);
-  return`<div class="card" style="background:var(--c)"><div class="row" style="justify-content:space-between;margin:0"><h2>${esc(p.name)}</h2><button onclick="viewP=null;render()">✕ Close</button></div>
+  return`<div class="card" style="background:var(--c)"><div class="row" style="justify-content:space-between;margin:0"><h2>${esc(p.name)}</h2><div class="row" style="margin:0">${role?`<button class="g" onclick="openCard(${id})">🃏 Card</button>`:''}<button onclick="viewP=null;render()">✕ Close</button></div></div>
   <div class="big" style="margin-top:8px">${p.balance}🪙</div>${p.loan?`<div class="mut" style="opacity:.8">🆘 owes ${p.loan} · net ${p.balance-p.loan}</div>`:''}
   <div class="row"><span class="chip" style="background:#fff">Played ${st.n}</span><span class="chip" style="background:#fff">Won ${st.w}</span><span class="chip" style="background:#fff">Lost ${st.n-st.w}</span><span class="chip" style="background:#fff">Bets net ${sg(st.net)}</span>${st.streak>1?`<span class="chip" style="background:#fff">${st.sw?'🔥 '+st.streak+' wins in a row':'🧊 '+st.streak+' losses in a row'}</span>`:''}</div>
   <div style="margin-top:10px"><div class="mut" style="opacity:.8">📈 Balance over the evening</div>${spark(hist(id),START,'#5b2bb0')}</div><div style="margin-top:8px">${st.rows.slice(0,8).map(r=>`<div class="ln"><span>${esc(r.b.game)} · ${esc(r.b.title)}</span><b>${r.win?'✅':'❌'} ${sg(r.net)}</b></div>`).join('')||'<div class="mut">No settled bets yet</div>'}</div></div>`}
@@ -411,6 +412,78 @@ function gameBoard(){
   ${rows.map((r,i)=>`<div class="lb"><b>${['🥇','🥈','🥉'][i]||'#'+(i+1)}</b><span>${esc(nm(r.id))}<div class="mut">${r.w}W · ${r.n-r.w}L</div></span><b style="width:auto">${sg(r.net)}</b></div>`).join('')}</div>`}
 window.qs=n=>{$('#vs').value=n};
 
+/* ---------- player trading cards ---------- */
+function cardStats(id){
+  const rows=[];[...S.bets].filter(b=>b.status==='settled').sort((a,b)=>a.id-b.id).forEach(b=>S.entries.filter(e=>e.bet_id===b.id&&e.player_id===id).forEach(e=>rows.push({b,win:(e.payout||0)>0,net:(e.payout||0)-e.stake})));
+  let cw=0,mw=0;rows.forEach(r=>{if(r.win){cw++;mw=Math.max(mw,cw)}else cw=0});
+  return{n:rows.length,w:rows.filter(r=>r.win).length,best:Math.max(0,...rows.map(r=>r.net)),maxW:mw,duelW:rows.filter(r=>r.win&&r.b.mode==='pvp').length,bank:rows.filter(r=>r.b.mode==='bank').reduce((a,r)=>a+r.net,0)}}
+async function drawCard(id){
+  try{await Promise.all([document.fonts.load('40px Bungee'),document.fonts.load('600 30px "Space Grotesk"')])}catch(e){}
+  const r=ranked(),i=r.findIndex(q=>q.id===id),p=r[i]||{name:nm(id),balance:0,net:START,loan:0},n=Math.max(r.length,1),rank=i+1||n,W=1080,H=1512;
+  const st=cardStats(id),aw=awards().filter(a=>a.name===p.name),ovr=n>1?Math.round(99-(rank-1)*49/(n-1)):99;
+  const T=rank===1?{n:'LEGENDARY',a:'#ffd93d',b:'#ff9f1c',art:['#5b2bb0','#ff6b9d'],e:'🥇'}
+    :rank===2?{n:'ELITE',a:'#f1f5f8',b:'#9aa8b2',art:['#1e3a8a','#4ecdc4'],e:'🥈'}
+    :rank===3?{n:'ELITE',a:'#f2b27a',b:'#a65b1f',art:['#7c2d12','#ffd93d'],e:'🥉'}
+    :rank<=Math.ceil(n*.4)?{n:'RARE',a:'#7bf0e6',b:'#2a9d8f',art:['#0f766e','#9b5de5'],e:'⭐'}
+    :{n:'COMMON',a:'#e8e0ff',b:'#9b8fd0',art:['#3b2a6b','#6a5acd'],e:'🎴'};
+  const c=document.createElement('canvas');c.width=W;c.height=H;const x=c.getContext('2d');
+  const lg=(x0,y0,x1,y1,a,b)=>{const g=x.createLinearGradient(x0,y0,x1,y1);g.addColorStop(0,a);g.addColorStop(1,b);return g};
+  const font=(px,fam)=>x.font=(fam==='s'?`700 ${px}px "Space Grotesk", sans-serif`:`400 ${px}px Bungee, Impact, sans-serif`);
+  const fitPx=(t,maxW,px,fam)=>{font(px,fam);while(px>34&&x.measureText(t).width>maxW){px-=4;font(px,fam)}return px};
+  let sd=id*9301+49297;const rnd=()=>(sd=(sd*9301+49297)%233280)/233280;
+  const star=(cx,cy,s,col)=>{x.fillStyle=col;x.beginPath();x.moveTo(cx,cy-s);x.quadraticCurveTo(cx,cy,cx+s,cy);x.quadraticCurveTo(cx,cy,cx,cy+s);x.quadraticCurveTo(cx,cy,cx-s,cy);x.quadraticCurveTo(cx,cy,cx,cy-s);x.fill()};
+  // frame
+  rr(x,0,0,W,H,62);x.fillStyle=lg(0,0,W,H,T.a,T.b);x.fill();
+  if(rank===1){x.save();rr(x,0,0,W,H,62);x.clip();['#ff6b9d','#ffd93d','#7bd88f','#4ecdc4','#9b5de5'].forEach((col,k)=>{x.fillStyle=col;x.globalAlpha=.28;x.beginPath();x.moveTo(-200+k*260,H);x.lineTo(60+k*260,H);x.lineTo(700+k*260,0);x.lineTo(440+k*260,0);x.fill()});x.restore()}
+  rr(x,26,26,W-52,H-52,42);x.fillStyle=lg(0,0,0,H,'#1c0f3d','#341a73');x.fill();
+  x.save();rr(x,26,26,W-52,H-52,42);x.clip();x.fillStyle='rgba(255,255,255,.05)';for(let yy=50;yy<H;yy+=36)for(let xx=50+((yy/36)%2)*18;xx<W;xx+=36){x.beginPath();x.arc(xx,yy,3,0,7);x.fill()}x.restore();
+  // header
+  x.textAlign='left';x.fillStyle=T.a;font(46);x.fillText('PARTY BANK',72,112);
+  x.fillStyle='#cfc3ff';font(24,'s');x.fillText('EVENT EDITION · '+new Date().getFullYear(),74,150);
+  x.textAlign='right';x.fillStyle='#fff';font(74);x.fillText('#'+rank,W-72,118);
+  // art window
+  rr(x,70,185,W-140,620,40);x.fillStyle=lg(0,185,W,805,T.art[0],T.art[1]);x.fill();
+  x.save();rr(x,70,185,W-140,620,40);x.clip();
+  const ini=(p.name.match(/[A-Za-z0-9\u0900-\u0DFF]/g)||['?']).slice(0,2).join('').toUpperCase();
+  x.textAlign='center';x.fillStyle='rgba(255,255,255,.22)';font(ini.length>1?330:420);x.fillText(ini,W/2,560);
+  for(let k=0;k<14;k++)star(90+rnd()*(W-180),205+rnd()*580,8+rnd()*16,'rgba(255,255,255,.75)');
+  x.font='170px sans-serif';x.fillStyle='#fff';x.textAlign='right';x.fillText(T.e,W-100,770);x.restore();
+  x.lineWidth=8;x.strokeStyle=T.a;rr(x,70,185,W-140,620,40);x.stroke();
+  rr(x,96,212,200,206,26);x.fillStyle='rgba(0,0,0,.5)';x.fill();
+  x.textAlign='center';x.fillStyle=T.a;font(30,'s');x.fillText('OVR',196,256);x.fillStyle='#fff';font(124);x.fillText(String(ovr),196,376);
+  font(28,'s');const tw=x.measureText(T.n).width+50;rr(x,W-96-tw,222,tw,52,26);x.fillStyle=T.a;x.fill();x.fillStyle='#111';x.textAlign='center';x.fillText(T.n,W-96-tw/2,259);
+  // name plate
+  rr(x,70,770,W-140,128,34);x.fillStyle=lg(70,0,W-70,0,T.a,T.b);x.fill();x.lineWidth=6;x.strokeStyle='#111';x.stroke();
+  const nmx=p.name.toUpperCase(),px=fitPx(nmx,W-220,86);font(px);x.fillStyle='#111';x.textAlign='center';x.fillText(nmx,W/2,770+64+px*.34);
+  x.fillStyle='#fff';font(34,'s');x.fillText(aw[0]?`${aw[0].icon} ${aw[0].title}`:(p.net-START>=0?'+':'')+(p.net-START)+' tokens vs start',W/2,948);
+  // stats
+  const sgn=v=>(v>0?'+':'')+v,S6=[['NET',sgn(p.net-START)],['WIN %',st.n?Math.round(st.w/st.n*100)+'%':'—'],['BEST WIN',st.best?'+'+st.best:'0'],['STREAK',String(st.maxW)],['DUELS WON',String(st.duelW)],['VS BANK',sgn(st.bank)]];
+  const bw=(W-140-48)/3;
+  S6.forEach((s,k)=>{const bx=70+(k%3)*(bw+24),by=990+Math.floor(k/3)*166;rr(x,bx,by,bw,142,26);x.fillStyle='rgba(255,255,255,.09)';x.fill();x.lineWidth=3;x.strokeStyle=T.a;x.stroke();
+    x.textAlign='center';x.fillStyle='#fff';font(s[1].length>6?44:56);x.fillText(s[1],bx+bw/2,by+78);x.fillStyle=T.a;font(22,'s');x.fillText(s[0],bx+bw/2,by+120)});
+  // footer
+  x.textAlign='left';x.fillStyle='#cfc3ff';font(24,'s');x.fillText('TOKENS',74,1360);x.fillStyle='#fff';font(92);x.fillText(p.balance+' 🪙',70,1440);
+  if(p.loan>0){x.fillStyle='#ffb4a8';font(22,'s');x.fillText('incl. loan of '+p.loan,76,1472)}
+  x.textAlign='right';x.font='54px sans-serif';x.fillText(aw.slice(0,5).map(a=>a.icon).join(' '),W-72,1425);
+  x.fillStyle='#cfc3ff';font(22,'s');x.fillText('CARD '+String(rank).padStart(2,'0')+' / '+String(n).padStart(2,'0'),W-72,1470);
+  return c}
+let cardIds=[],cardI=0,cardBlob=null,cardUrl=null,cardTok=0;
+window.openCard=id=>{cardIds=ranked().map(p=>p.id).filter(i=>S.players.find(p=>p.id===i));cardI=Math.max(0,cardIds.indexOf(id));showCard()};
+async function showCard(){
+  const V=$('#cardv'),id=cardIds[cardI],tok=++cardTok;if(!id)return;V.style.display='flex';V.innerHTML='<div style="color:#fff">Making card…</div>';
+  const c=await drawCard(id),blob=await new Promise(r=>c.toBlob(r,'image/png'));if(tok!==cardTok)return;
+  if(cardUrl)URL.revokeObjectURL(cardUrl);cardBlob=blob;cardUrl=URL.createObjectURL(blob);
+  V.innerHTML=`<img src="${cardUrl}" alt="card"><div class="row" style="justify-content:center;margin:0"><button onclick="cardNav(-1)">◀</button><button class="g" onclick="cardShare()">📤 Share / Save</button><button onclick="cardNav(1)">▶</button><button class="r" onclick="cardClose()">Close</button></div><div style="color:#fff;font-size:13px">${cardI+1} of ${cardIds.length} · ${esc(nm(id))}</div>`}
+window.cardNav=d=>{cardI=(cardI+d+cardIds.length)%cardIds.length;showCard()};
+window.cardClose=()=>{cardTok++;$('#cardv').style.display='none';if(cardUrl){URL.revokeObjectURL(cardUrl);cardUrl=null}};
+window.cardShare=async()=>{if(!cardBlob)return;const fn='party-card-'+nm(cardIds[cardI]).replace(/[^\w]+/g,'_')+'.png',f=new File([cardBlob],fn,{type:'image/png'});
+  if(navigator.canShare&&navigator.canShare({files:[f]})){try{await navigator.share({files:[f],title:'My Party Bank card'});return}catch(e){if(e.name==='AbortError')return}}
+  const a=document.createElement('a');a.href=cardUrl;a.download=fn;a.click();toast('Card saved — send it on WhatsApp')};
+window.allCards=async()=>{const ids=ranked().map(p=>p.id).filter(i=>S.players.find(p=>p.id===i));toast('Making '+ids.length+' cards…');
+  for(let k=0;k<ids.length;k++){const c=await drawCard(ids[k]),b=await new Promise(r=>c.toBlob(r,'image/png')),a=document.createElement('a');
+    a.href=URL.createObjectURL(b);a.download='card-'+String(k+1).padStart(2,'0')+'-'+nm(ids[k]).replace(/[^\w]+/g,'_')+'.png';a.click();await new Promise(r=>setTimeout(r,450))}
+  toast('All cards downloaded ✔')};
+
 function render(){
   const m={};document.querySelectorAll('#app [id]').forEach(el=>{if(/INPUT|SELECT|TEXTAREA/.test(el.tagName))m[el.id]=el.type==='checkbox'?el.checked:el.value});
   const ae=document.activeElement,fid=ae&&ae.id&&ae.closest('#app')?ae.id:null,ss=fid?ae.selectionStart:null;
@@ -459,6 +532,7 @@ function render(){
     <div class="row"><button class="${S.ev.show_economy===false?'g':'r'}" onclick="setEco()">${S.ev.show_economy===false?'👁 Show Economy tab to everyone':'🙈 Hide Economy tab from guests'}</button><span class="mut">Currently ${S.ev.show_economy===false?'hidden from guests (co-hosts and you still see it)':'visible to everyone'}</span></div>
     <div class="mut" style="margin-top:10px">Prizes are optional real-world rewards (e.g. “Chocolate box”). They show under the winners’ names on the podium and in the ceremony. The winners themselves are picked automatically from the leaderboard.</div><div class="row"><input id="pz1" placeholder="🥇 1st prize (optional)" value="${esc(pz[0]||'')}" style="width:100%"><input id="pz2" placeholder="🥈 2nd prize (optional)" value="${esc(pz[1]||'')}" style="width:100%"><input id="pz3" placeholder="🥉 3rd prize (optional)" value="${esc(pz[2]||'')}" style="width:100%"></div>
     <div class="row"><button class="g" onclick="saveEv()">Save</button><button onclick="clearPz()">Clear prizes</button>${S.ev.ended?'<button class="c" onclick="ceremony()">🏅 Replay ceremony</button>':''}${S.ev.ended?'<button onclick="endEv(false)">Reopen event</button>':'<button class="r" onclick="endEv(true)">🏁 End event</button>'}</div></div>`:''}
+    <div class="card" style="background:var(--p)"><h3>🃏 Player cards</h3><div class="mut" style="color:#111">A trading-card image for every player to brag about. Flip through, then share each one on WhatsApp.</div><div class="row"><button class="g" onclick="openCard()">Open card viewer</button><button onclick="allCards()">⬇ Download all</button></div></div>
     <div class="card"><h3>💾 Backup</h3><div class="mut">Download a copy in case anything goes wrong mid-party.</div><div class="row"><button onclick="bkBal()">Balances CSV</button><button onclick="bkLed()">Full history CSV</button></div></div>
     ${staff?`<div class="card"><h3>Players</h3>${byName().map(p=>`<div class="ln"><span>${esc(p.name)} <small class="mut">${p.balance}🪙</small></span><button class="r" style="padding:2px 8px" onclick="rmp(${p.id})">✕</button></div>`).join('')}</div>
     `:''}
