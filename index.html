@@ -137,6 +137,7 @@ window.settle=async(id,i)=>{const b=S.bets.find(x=>x.id===id);
 window.voidB=async id=>{if(await ask('Void this bet and refund everyone?',{ok:'Void & refund',cls:'r'}))rpc('void_bet',{p_bet:id})};
 window.undoB=async id=>{if(await ask('Undo the result? Payouts will be reversed.',{ok:'Undo result',cls:'r'}))rpc('reopen_bet',{p_bet:id})};
 window.clearPz=()=>{[1,2,3].forEach(i=>$('#pz'+i).value='');saveEv()};
+window.setEco=()=>rpc('set_economy',{p_show:S.ev.show_economy===false});
 window.saveEv=()=>rpc('set_event',{p_prizes:[1,2,3].map(i=>$('#pz'+i).value.trim()),p_max_stake:parseInt($('#ms').value)||0});
 window.endEv=async end=>{if(await ask(end?'End the event and freeze the final leaderboard?<div class="mut">New bets are blocked. All live bets must be settled first.</div>':'Reopen the event?',{ok:end?'End event':'Reopen',cls:end?'r':'g'}))rpc('end_event',{p_end:end})};
 window.resetEv=async keep=>{
@@ -186,56 +187,92 @@ function ecoData(){
   const vs={};S.bets.filter(b=>b.mode==='bank'&&b.status==='settled').forEach(b=>S.entries.filter(e=>e.bet_id===b.id).forEach(e=>{vs[e.player_id]=(vs[e.player_id]||0)+(e.payout||0)-e.stake}));
   const pair={};let duels=0;
   S.bets.filter(b=>b.mode==='pvp'&&b.status==='settled').forEach(b=>{const es=S.entries.filter(e=>e.bet_id===b.id),w=es.find(e=>(e.payout||0)>0),l=es.find(e=>!((e.payout||0)>0));
-    if(!w||!l)return;duels++;const a=w.player_id,c=l.player_id,k=Math.min(a,c)+'|'+Math.max(a,c);pair[k]=(pair[k]||0)+(a<c?l.stake:-l.stake)});
-  const flows=Object.entries(pair).filter(([,v])=>v!==0).map(([k,v])=>{const [lo,hi]=k.split('|').map(Number);return v>0?{from:hi,to:lo,amt:v}:{from:lo,to:hi,amt:-v}}).sort((a,b)=>b.amt-a.amt);
+    if(!w||!l)return;duels++;const a=w.player_id,c=l.player_id,lo=Math.min(a,c),hi=Math.max(a,c),k=lo+'|'+hi,P=pair[k]=pair[k]||{lo,hi,net:0,n:0,loW:0,hiW:0};
+    P.n++;if(a===lo){P.net+=l.stake;P.loW++}else{P.net-=l.stake;P.hiW++}});
+  const pairs=Object.values(pair);
+  const flows=pairs.filter(P=>P.net!==0).map(P=>P.net>0?{from:P.hi,to:P.lo,amt:P.net}:{from:P.lo,to:P.hi,amt:-P.net}).sort((a,b)=>b.amt-a.amt);
   const escrow=S.entries.filter(e=>{const b=S.bets.find(x=>x.id===e.bet_id);return b&&b.mode==='pvp'&&(b.status==='open'||b.status==='locked')}).reduce((a,e)=>a+e.stake,0);
   const adjR=S.ledger.filter(l=>l.player_id&&l.adj_batch&&!l.undone);
-  return{cats,bin,bout,vs,flows,duels,escrow,
+  return{cats,bin,bout,vs,flows,pairs,duels,escrow,
     bonus:adjR.filter(l=>l.delta>0).reduce((a,l)=>a+l.delta,0),penalty:adjR.filter(l=>l.delta<0).reduce((a,l)=>a+l.delta,0),
     welcome:S.ledger.filter(l=>l.reason==='Welcome tokens').reduce((a,l)=>a+l.delta,0),
     held:S.players.reduce((a,p)=>a+p.balance,0),loans:S.players.reduce((a,p)=>a+(p.loan||0),0),
     bankBets:S.bets.filter(b=>b.mode==='bank'&&b.status==='settled').length}}
 let ecoSel=null;
 window.selNode=id=>{ecoSel=ecoSel===id?null:id;render()};
+function orderNodes(r,d){  // frequent opponents sit next to each other
+  const w={},add=(a,b,v)=>{w[a+'|'+b]=(w[a+'|'+b]||0)+v;w[b+'|'+a]=(w[b+'|'+a]||0)+v};
+  d.pairs.forEach(P=>add(P.lo,P.hi,P.n));
+  const tot=id=>r.reduce((a,q)=>a+(w[id+'|'+q.id]||0),0),left=[...r].sort((a,b)=>tot(b.id)-tot(a.id)||a.name.localeCompare(b.name)),out=[];
+  if(left.length)out.push(left.shift());
+  while(left.length){const l=out[out.length-1].id;left.sort((a,b)=>(w[l+'|'+b.id]||0)-(w[l+'|'+a.id]||0)||tot(b.id)-tot(a.id)||a.name.localeCompare(b.name));out.push(left.shift())}
+  return out}
 function meshModel(d,cx,cy,R,rb,ra,rbank){
-  const r=ranked().filter(p=>S.players.find(x=>x.id===p.id)),n=r.length,pos={},mb=Math.max(1,...r.map(p=>p.balance));
+  const r=orderNodes(ranked().filter(p=>S.players.find(x=>x.id===p.id)),d),n=r.length,pos={},mb=Math.max(1,...r.map(p=>p.balance));
   r.forEach((p,i)=>{const a=2*Math.PI*i/n-Math.PI/2,rad=n>1?R:0;pos[p.id]={x:cx+rad*Math.cos(a),y:cy+rad*Math.sin(a),a,r:rb+ra*(p.balance/mb),p}});
   pos.bank={x:cx,y:cy,r:rbank};
   const ed=[];
-  d.flows.forEach(f=>{if(pos[f.from]&&pos[f.to])ed.push({a:f.from,b:f.to,w:f.amt,c:'#9b5de5',m:'ah'})});
-  Object.entries(d.vs).forEach(([id,v])=>{id=+id;if(!pos[id]||!v)return;ed.push(v>0?{a:'bank',b:id,w:v,c:'#2fa84f',m:'ag'}:{a:id,b:'bank',w:-v,c:'#e0372c',m:'ar'})});
+  d.pairs.forEach(P=>{if(!pos[P.lo]||!pos[P.hi])return;
+    ed.push(P.net===0?{a:P.lo,b:P.hi,w:0,c:'#8a8a8a',m:null,pp:1,n:P.n,t:'even'}:{a:P.net>0?P.hi:P.lo,b:P.net>0?P.lo:P.hi,w:Math.abs(P.net),c:'#9b5de5',m:'ah',pp:1,n:P.n,t:String(Math.abs(P.net))})});
+  Object.entries(d.vs).forEach(([id,v])=>{id=+id;if(!pos[id]||!v)return;ed.push(v>0?{a:'bank',b:id,w:v,c:'#2fa84f',m:'ag',t:String(v)}:{a:id,b:'bank',w:-v,c:'#e0372c',m:'ar',t:String(-v)})});
+  S.players.forEach(p=>{if(p.loan>0&&pos[p.id])ed.push({a:'bank',b:p.id,w:p.loan,c:'#f59e0b',m:'al',dash:1,t:'loan '+p.loan})});
   return{r,n,pos,ed,mx:Math.max(1,...ed.map(e=>e.w))}}
+function geo(e,pos){  // curved for player↔player (so lines never run through the bank), straight for bank spokes
+  const A=pos[e.a],B=pos[e.b],dx=B.x-A.x,dy=B.y-A.y,c=e.pp?{x:(A.x+B.x)/2-dy*.2,y:(A.y+B.y)/2+dx*.2}:null,t1=c||B,t2=c||A;
+  const d1=Math.hypot(t1.x-A.x,t1.y-A.y)||1,d2=Math.hypot(B.x-t2.x,B.y-t2.y)||1,sx=(t1.x-A.x)/d1,sy=(t1.y-A.y)/d1,ex=(B.x-t2.x)/d2,ey=(B.y-t2.y)/d2,pad=e.m?B.r+6:B.r+2;
+  const x1=A.x+sx*(A.r+2),y1=A.y+sy*(A.r+2),x2=B.x-ex*pad,y2=B.y-ey*pad;
+  return{x1,y1,x2,y2,c,ex,ey,mid:c?{x:.25*A.x+.5*c.x+.25*B.x,y:.25*A.y+.5*c.y+.25*B.y}:{x:(x1+x2)/2,y:(y1+y2)/2}}}
+function bridge(id){
+  const p=S.players.find(x=>x.id===id);if(!p)return null;let duel=0,bank=0,live=0,welcome=0,host=0,loan=0;
+  S.entries.filter(e=>e.player_id===id).forEach(e=>{const b=S.bets.find(x=>x.id===e.bet_id);if(!b)return;
+    if(b.status==='settled'){const net=(e.payout||0)-e.stake;if(b.mode==='pvp')duel+=net;else bank+=net}else if(b.status==='open'||b.status==='locked')live-=e.stake});
+  S.ledger.filter(l=>l.player_id===id&&!l.bet_id).forEach(l=>{const r=l.reason||'';
+    if(r==='Welcome tokens')welcome+=l.delta;else if(/^Rescue loan|^Loan repaid/.test(r))loan+=l.delta;else host+=l.delta});
+  const sum=welcome+host+loan+duel+bank+live,full=S.ledger.length<1000;return{p,welcome,host,loan,duel,bank,live,sum,full,ok:full&&sum===p.balance}}
+function meshInfo(d,sel){
+  const b=bridge(sel);if(!b)return'';
+  const prs=d.pairs.filter(P=>P.lo===sel||P.hi===sel).map(P=>{const m=P.lo===sel;return{opp:m?P.hi:P.lo,w:m?P.loW:P.hiW,l:m?P.hiW:P.loW,net:m?P.net:-P.net}});
+  const ln=(t,v)=>v?`<div class="ln"><span>${t}</span><b>${sg(v)}</b></div>`:'';
+  return`<div style="margin-top:8px"><b>${esc(b.p.name)}</b> · ${b.p.balance}🪙 <button style="padding:2px 8px" onclick="openP(${sel})">Profile</button>
+  ${prs.map(x=>`<div class="ln"><span>⚔️ ${esc(nm(x.opp))}: won ${x.w} · lost ${x.l}</span><b>${sg(x.net)}</b></div>`).join('')}${d.vs[sel]?`<div class="ln"><span>🏦 Bank</span><b>${sg(d.vs[sel])}</b></div>`:''}
+  <div class="mut" style="margin-top:8px">Where their tokens come from</div>
+  <div class="ln"><span>Welcome tokens</span><b>${sg(b.welcome)}</b></div>${ln('Host changes (late / early etc.)',b.host)}${ln('Loan (net)',b.loan)}${ln('Duels vs players',b.duel)}${ln('Bets vs Bank',b.bank)}${ln('Staked in live bets',b.live)}
+  <div class="ln"><span><b>Total</b></span><b>${b.sum} ${b.ok?'✔ matches their balance':b.full?'⚠ differs from balance '+b.p.balance:'(history too long to verify)'}</b></div></div>`}
 function meshCard(d){
   const m=meshModel(d,220,220,150,7,9,24),{r,n,pos,ed,mx}=m;if(!n)return'';
   const sel=ecoSel&&pos[ecoSel]?ecoSel:null;
   let web='';for(let i=0;i<n;i++){const A=pos[r[i].id];web+=`<line x1="220" y1="220" x2="${A.x.toFixed(1)}" y2="${A.y.toFixed(1)}"/>`;for(let j=i+1;j<n;j++){const B=pos[r[j].id];web+=`<line x1="${A.x.toFixed(1)}" y1="${A.y.toFixed(1)}" x2="${B.x.toFixed(1)}" y2="${B.y.toFixed(1)}"/>`}}
-  const lines=ed.map(e=>{const A=pos[e.a],B=pos[e.b],dx=B.x-A.x,dy=B.y-A.y,L=Math.hypot(dx,dy)||1,ux=dx/L,uy=dy/L,on=!sel||e.a===sel||e.b===sel;
-    return`<line x1="${(A.x+ux*(A.r+2)).toFixed(1)}" y1="${(A.y+uy*(A.r+2)).toFixed(1)}" x2="${(B.x-ux*(B.r+6)).toFixed(1)}" y2="${(B.y-uy*(B.r+6)).toFixed(1)}" stroke="${e.c}" stroke-width="${(1.5+e.w/mx*5).toFixed(1)}" opacity="${on?.9:.08}" marker-end="url(#${e.m})"/>`}).join('');
+  const lab=ed.length<=12,f1=v=>v.toFixed(1);
+  const lines=ed.map(e=>{const g=geo(e,pos),on=!sel||e.a===sel||e.b===sel,w=(1.5+e.w/mx*5).toFixed(1),at=`stroke="${e.c}" stroke-width="${w}" opacity="${on?.9:.08}" fill="none"${e.dash?' stroke-dasharray="6 4"':''}${e.m?` marker-end="url(#${e.m})"`:''}`;
+    const shape=g.c?`<path d="M${f1(g.x1)},${f1(g.y1)} Q${f1(g.c.x)},${f1(g.c.y)} ${f1(g.x2)},${f1(g.y2)}" ${at}/>`:`<line x1="${f1(g.x1)}" y1="${f1(g.y1)}" x2="${f1(g.x2)}" y2="${f1(g.y2)}" ${at}/>`;
+    const lbl=(lab&&!sel)||(sel&&(e.a===sel||e.b===sel))?`<text x="${f1(g.mid.x)}" y="${f1(g.mid.y+3)}" font-size="9" font-weight="700" text-anchor="middle" fill="#111" stroke="#fff" stroke-width="3" paint-order="stroke">${e.t}</text>`:'';
+    return shape+lbl}).join('');
   const linked=new Set();ed.forEach(e=>{if(e.a===sel)linked.add(e.b);if(e.b===sel)linked.add(e.a)});
   const small=n>16,nodes=r.map(p=>{const q=pos[p.id],dim=sel&&sel!==p.id&&!linked.has(p.id),c=Math.cos(q.a),lx=220+(150+q.r+5)*c,ly=220+(150+q.r+5)*Math.sin(q.a);
     const nm2=p.name.length>9?p.name.slice(0,8)+'…':p.name;
     return`<g onclick="selNode(${p.id})" style="cursor:pointer" opacity="${dim?.25:1}"><circle cx="${q.x.toFixed(1)}" cy="${q.y.toFixed(1)}" r="${q.r.toFixed(1)}" fill="${p.net>=START?'#7bd88f':'#ff8a80'}" stroke="#111" stroke-width="${sel===p.id?4:2}"/><text x="${lx.toFixed(1)}" y="${(ly+3).toFixed(1)}" font-size="${small?9:11}" font-weight="700" text-anchor="${c>.25?'start':c<-.25?'end':'middle'}" fill="#111">${esc(nm2)}</text></g>`}).join('');
-  const info=sel?(()=>{const rows=ed.filter(e=>e.a===sel||e.b===sel),nmx=x=>x==='bank'?'🏦 Bank':nm(x);
-    return`<div style="margin-top:8px"><b>${esc(nm(sel))}</b> · ${pos[sel].p.balance}🪙 <button style="padding:2px 8px" onclick="openP(${sel})">Profile</button>${rows.map(e=>`<div class="ln"><span>${esc(nmx(e.a))} ➜ ${esc(nmx(e.b))}</span><b>${e.w}🪙</b></div>`).join('')||'<div class="mut">No money moved with anyone yet</div>'}</div>`})():'<div class="mut" style="margin-top:6px">Tap a player to see who they traded with.</div>';
   const mk=(id,c)=>`<marker id="${id}" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="9" markerHeight="9" markerUnits="userSpaceOnUse" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="${c}"/></marker>`;
-  return`<div class="card"><h3>🕸 Money web</h3><div class="mut">Every dot is a player (bigger = more tokens, green = ahead of start). Thin grey lines connect everyone; coloured lines show net money moved, arrows point to who received it.</div>
-  <svg viewBox="0 0 440 440" style="width:100%;height:auto;display:block;margin-top:6px"><defs>${mk('ah','#9b5de5')}${mk('ag','#2fa84f')}${mk('ar','#e0372c')}</defs>
-  <g stroke="#000" stroke-opacity=".11" stroke-width="1">${web}</g>${lines}<g><circle cx="220" cy="220" r="24" fill="#ffd93d" stroke="#111" stroke-width="3"/><text x="220" y="227" font-size="22" text-anchor="middle">🏦</text></g>${nodes}</svg>
-  <div class="row" style="font-size:13px"><span><b style="color:#9b5de5">━</b> player ➜ player</span><span><b style="color:#2fa84f">━</b> bank pays player</span><span><b style="color:#e0372c">━</b> player pays bank</span></div>${info}
+  return`<div class="card"><h3>🕸 Money web</h3><div class="mut">Each dot is a player (bigger = more tokens, green = ahead of start). Frequent opponents sit side by side. Coloured lines show <b>net</b> money moved, arrows point to who received it. Tap a dot for the exact numbers.</div>
+  <svg viewBox="0 0 440 440" style="width:100%;height:auto;display:block;margin-top:6px"><defs>${mk('ah','#9b5de5')}${mk('ag','#2fa84f')}${mk('ar','#e0372c')}${mk('al','#f59e0b')}</defs>
+  <g stroke="#000" stroke-opacity=".08" stroke-width="1">${web}</g>${lines}<g><circle cx="220" cy="220" r="24" fill="#ffd93d" stroke="#111" stroke-width="3"/><text x="220" y="227" font-size="22" text-anchor="middle">🏦</text></g>${nodes}</svg>
+  <div class="row" style="font-size:12px"><span><b style="color:#9b5de5">━</b> player ➜ player</span><span><b style="color:#8a8a8a">━</b> even duels</span><span><b style="color:#2fa84f">━</b> bank pays</span><span><b style="color:#e0372c">━</b> pays bank</span><span><b style="color:#f59e0b">┅</b> loan</span></div>
+  ${sel?meshInfo(d,sel):'<div class="mut" style="margin-top:6px">Tap a player to see exactly who they traded with.</div>'}
   ${role?'<div class="row"><button class="g" onclick="shareImg(\'mesh\')">🖼 Share web image</button></div>':''}</div>`}
 async function drawMesh(){
-  const d=ecoData(),m=meshModel(d,540,650,290,14,18,46),{c,x,W}=await canvasFor(1240,'MONEY WEB'),{r,n,pos,ed,mx}=m;
-  x.strokeStyle='rgba(0,0,0,.10)';x.lineWidth=1.5;x.beginPath();
+  const d=ecoData(),m=meshModel(d,540,650,290,14,18,46),{c,x,W}=await canvasFor(1260,'MONEY WEB'),{r,n,pos,ed,mx}=m,lab=ed.length<=14;
+  x.strokeStyle='rgba(0,0,0,.09)';x.lineWidth=1.5;x.beginPath();
   for(let i=0;i<n;i++){const A=pos[r[i].id];x.moveTo(540,650);x.lineTo(A.x,A.y);for(let j=i+1;j<n;j++){const B=pos[r[j].id];x.moveTo(A.x,A.y);x.lineTo(B.x,B.y)}}x.stroke();
-  ed.forEach(e=>{const A=pos[e.a],B=pos[e.b],dx=B.x-A.x,dy=B.y-A.y,L=Math.hypot(dx,dy)||1,ux=dx/L,uy=dy/L,x1=A.x+ux*(A.r+4),y1=A.y+uy*(A.r+4),x2=B.x-ux*(B.r+16),y2=B.y-uy*(B.r+16),ang=Math.atan2(dy,dx);
-    x.strokeStyle=e.c;x.fillStyle=e.c;x.lineWidth=3+e.w/mx*10;x.globalAlpha=.9;x.beginPath();x.moveTo(x1,y1);x.lineTo(x2,y2);x.stroke();
-    x.beginPath();x.moveTo(x2+ux*16,y2+uy*16);x.lineTo(x2-uy*9,y2+ux*9);x.lineTo(x2+uy*9,y2-ux*9);x.closePath();x.fill();x.globalAlpha=1});
+  x.textAlign='center';x.font='700 21px "Space Grotesk", sans-serif';x.lineJoin='round';
+  ed.forEach(e=>{const g=geo(e,pos);x.strokeStyle=e.c;x.fillStyle=e.c;x.lineWidth=3+e.w/mx*10;x.globalAlpha=.9;x.setLineDash(e.dash?[14,10]:[]);
+    x.beginPath();x.moveTo(g.x1,g.y1);if(g.c)x.quadraticCurveTo(g.c.x,g.c.y,g.x2,g.y2);else x.lineTo(g.x2,g.y2);x.stroke();x.setLineDash([]);
+    if(e.m){x.beginPath();x.moveTo(g.x2+g.ex*16,g.y2+g.ey*16);x.lineTo(g.x2-g.ey*9,g.y2+g.ex*9);x.lineTo(g.x2+g.ey*9,g.y2-g.ex*9);x.closePath();x.fill()}x.globalAlpha=1;
+    if(lab){x.lineWidth=5;x.strokeStyle='#fff';x.strokeText(e.t,g.mid.x,g.mid.y+7);x.fillStyle='#111';x.fillText(e.t,g.mid.x,g.mid.y+7)}});
   x.fillStyle='#ffd93d';x.strokeStyle='#111';x.lineWidth=5;x.beginPath();x.arc(540,650,46,0,7);x.fill();x.stroke();x.fillStyle='#111';x.textAlign='center';x.font='52px sans-serif';x.fillText('🏦',540,668);
   r.forEach(p=>{const q=pos[p.id],cs=Math.cos(q.a);x.fillStyle=p.net>=START?'#7bd88f':'#ff8a80';x.strokeStyle='#111';x.lineWidth=4;x.beginPath();x.arc(q.x,q.y,q.r,0,7);x.fill();x.stroke();
     x.fillStyle='#111';x.font='700 24px "Space Grotesk", sans-serif';x.textAlign=cs>.25?'left':cs<-.25?'right':'center';
     const nm2=p.name.length>10?p.name.slice(0,9)+'…':p.name;x.fillText(nm2,540+(290+q.r+12)*cs,650+(290+q.r+12)*Math.sin(q.a)+8)});
-  x.textAlign='center';x.fillStyle='#111';x.font='600 24px "Space Grotesk", sans-serif';
-  x.fillText('Purple: player ➜ player · Green: bank pays player · Red: player pays bank',W/2,1170);x.fillText('Bigger dot = more tokens · green = ahead of start',W/2,1205);return c}
+  x.textAlign='center';x.fillStyle='#111';x.font='600 23px "Space Grotesk", sans-serif';
+  x.fillText('Purple: player ➜ player (net) · Grey: even · Green: bank pays · Red: pays bank · Orange dashed: loan',W/2,1180);x.fillText('Bigger dot = more tokens · green = ahead of start · frequent opponents sit side by side',W/2,1215);return c}
 
 function ecoView(){
   const d=ecoData(),stakes=d.cats['Player stakes in']||0,out=-(d.cats['Payouts to winners']||0)-(d.cats['Rescue loans out']||0);
@@ -379,6 +416,7 @@ function render(){
   const ae=document.activeElement,fid=ae&&ae.id&&ae.closest('#app')?ae.id:null,ss=fid?ae.selectionStart:null;
   if(TV){$('#app').innerHTML=`<div class="top"><h1>PARTY BANK</h1><div class="row" style="margin:0">${dotH()}${sndH()}<span class="coin">🏦 ${S.bank}🪙</span></div></div><div class="wrap tv">${podium()}${top10()}${activity(8)}</div>`;return}
   const staff=!!role,sup=role==='super';
+  if(tab==='eco'&&S.ev.show_economy===false&&!staff)tab='home';
   let v='';
   if(tab==='home'){
     const tot=S.players.reduce((a,p)=>a+p.balance,0),live=S.bets.filter(b=>b.status==='open'||b.status==='locked').length;
@@ -418,6 +456,7 @@ function render(){
     ${S.players.filter(p=>p.loan>0).map(p=>`<div class="ln"><span>${esc(p.name)} owes <b>${p.loan}</b></span><button onclick="repay(${p.id})">Repay</button></div>`).join('')}</div>
     `:''}
     ${sup?`<div class="card"><h3>🏁 Event settings</h3><div class="row"><span>Max stake per bet</span><input id="ms" type="number" min="0" value="${S.ev.max_stake||0}" style="width:100px"><span class="mut">0 = no limit</span></div>
+    <div class="row"><button class="${S.ev.show_economy===false?'g':'r'}" onclick="setEco()">${S.ev.show_economy===false?'👁 Show Economy tab to everyone':'🙈 Hide Economy tab from guests'}</button><span class="mut">Currently ${S.ev.show_economy===false?'hidden from guests (co-hosts and you still see it)':'visible to everyone'}</span></div>
     <div class="mut" style="margin-top:10px">Prizes are optional real-world rewards (e.g. “Chocolate box”). They show under the winners’ names on the podium and in the ceremony. The winners themselves are picked automatically from the leaderboard.</div><div class="row"><input id="pz1" placeholder="🥇 1st prize (optional)" value="${esc(pz[0]||'')}" style="width:100%"><input id="pz2" placeholder="🥈 2nd prize (optional)" value="${esc(pz[1]||'')}" style="width:100%"><input id="pz3" placeholder="🥉 3rd prize (optional)" value="${esc(pz[2]||'')}" style="width:100%"></div>
     <div class="row"><button class="g" onclick="saveEv()">Save</button><button onclick="clearPz()">Clear prizes</button>${S.ev.ended?'<button class="c" onclick="ceremony()">🏅 Replay ceremony</button>':''}${S.ev.ended?'<button onclick="endEv(false)">Reopen event</button>':'<button class="r" onclick="endEv(true)">🏁 End event</button>'}</div></div>`:''}
     <div class="card"><h3>💾 Backup</h3><div class="mut">Download a copy in case anything goes wrong mid-party.</div><div class="row"><button onclick="bkBal()">Balances CSV</button><button onclick="bkLed()">Full history CSV</button></div></div>
@@ -425,7 +464,7 @@ function render(){
     `:''}
     ${sup?`<div class="card" style="background:var(--r)"><h3>🧹 Start clean</h3><div class="mut" style="color:#111">Wipe test data before the real event.</div><div class="row"><button onclick="resetEv(true)">Reset tokens &amp; bets (keep players)</button><button onclick="resetEv(false)">Delete everything</button></div></div>`:''}`;
   }
-  const tabs=[['home','🏠','Home'],['people','👥','People'],['eco','💱','Economy'],['bets','🎲','Bets'],['host',staff?'🎮':'🔑','Host']];
+  const tabs=[['home','🏠','Home'],['people','👥','People'],...(S.ev.show_economy===false&&!staff?[]:[['eco',S.ev.show_economy===false?'🙈':'💱','Economy']]),['bets','🎲','Bets'],['host',staff?'🎮':'🔑','Host']];
   $('#app').innerHTML=`<div class="top"><h1>PARTY BANK</h1><div class="row" style="margin:0">${staff?`<span class="badge ${role}">${sup?'👑 Super':'🤝 Co-host'}</span>`:''}${dotH()}${sndH()}<span class="coin">🏦 ${S.bank}🪙</span></div></div><div class="wrap">${v}</div><nav>${tabs.map(t=>`<button class="${tab===t[0]?'on':''}" onclick="tab='${t[0]}';render()"><span>${t[1]}</span>${t[2]}</button>`).join('')}</nav>`;
   for(const id in m){const el=document.getElementById(id);if(el){if(el.type==='checkbox')el.checked=m[id];else el.value=m[id]}}
   if(fid){const el=document.getElementById(fid);if(el){el.focus();try{el.setSelectionRange(ss,ss)}catch(e){}}}
