@@ -5,6 +5,9 @@
 -- !!! CHANGE BOTH CODES BELOW BEFORE RUNNING (use long ones) !!!
 -- (this resets everything: players, bets, ledger)
 
+
+
+
 drop table if exists ledger, entries, bets, bank, players, profiles, settings, event cascade;
 drop sequence if exists adj_seq;
 drop function if exists need(text), is_staff(), join_party(text), claim_super(text), set_role(uuid,text),
