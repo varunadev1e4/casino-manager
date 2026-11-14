@@ -15,8 +15,8 @@ drop function if exists rescue_loan(text,bigint,int), place_entry(text,bigint,bi
 
 create table settings(key text primary key, value text not null);
 insert into settings values
-  ('super_code','Varun13#'),     -- you: everything
-  ('helper_code','cohost13#'),   -- co-host: everything except event settings and start clean (reset/delete)
+  ('super_code','CHANGE-ME-SUPER'),     -- you: everything
+  ('helper_code','CHANGE-ME-COHOST'),   -- co-host: everything except event settings and start clean (reset/delete)
   ('start_tokens','1000');
 
 create sequence adj_seq;
@@ -38,7 +38,7 @@ create table ledger(id bigserial primary key, player_id bigint, delta int not nu
   reason text, bet_id bigint, adj_batch bigint, undone boolean not null default false,
   created_at timestamptz default now());
 create table event(id int primary key default 1 check(id=1), ended boolean not null default false,
-  prizes jsonb not null default '[]', final jsonb, max_stake int not null default 500, show_economy boolean not null default true);
+  prizes jsonb not null default '[]', final jsonb, max_stake int not null default 500, show_economy boolean not null default true, staff_cards jsonb not null default '[]');
 insert into event(id) values(1);
 
 -- Everyone can read (except settings = codes). Nobody can write directly; all writes go through the functions below.
@@ -298,6 +298,13 @@ end $$;
 create or replace function set_economy(p_code text, p_show boolean) returns void language plpgsql security definer set search_path=public as $$
 begin perform need(p_code,'super');
   update event set show_economy=coalesce(p_show,true) where id=1;
+end $$;
+
+-- Super admin: save the special (host team) card details.
+create or replace function set_staff_cards(p_code text, p_cards jsonb) returns void language plpgsql security definer set search_path=public as $$
+begin perform need(p_code,'super');
+  if jsonb_typeof(p_cards)<>'array' or jsonb_array_length(p_cards)>60 then raise exception 'Invalid card list'; end if;
+  update event set staff_cards=p_cards where id=1;
 end $$;
 
 alter publication supabase_realtime add table players, bank, bets, entries, ledger, event;

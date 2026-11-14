@@ -70,7 +70,7 @@ const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&
 const GAMES=['Flip 7','Exploding Kittens','Blackjack','Least Count','Mafia','Trivia Quiz',"Don't Say Same Thing",'Whole Party','Other'];
 const START=1000, TV=new URLSearchParams(location.search).has('tv');
 let booted=false,seen=null,cerT=[],live=false,gameSel='All',AC=null,muted=localStorage.getItem('pb_mute')==='1';
-let S={players:[],bank:0,bets:[],entries:[],ledger:[],ev:{ended:false,prizes:[],final:null,max_stake:500}},tab='home',timer,code=null,role=null,viewP=null,Q='';
+let S={players:[],bank:0,bets:[],entries:[],ledger:[],ev:{ended:false,prizes:[],final:null,max_stake:500,staff_cards:[]}},tab='home',timer,code=null,role=null,viewP=null,Q='';
 const nm=id=>id?(S.players.find(p=>p.id===id)?.name||'?'):'🏦 Bank';
 const tm=t=>new Date(t).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'});
 const sg=n=>`<span class="${n>=0?'pos':'neg'}">${n>0?'+':''}${n}</span>`;
@@ -327,7 +327,7 @@ function awards(){
 const awardsCard=()=>{const a=awards();return a.length?`<div class="card"><h3>🏅 Awards</h3>${a.map(x=>`<div class="ln"><span>${x.icon} <b>${x.title}</b></span><span style="text-align:right">${esc(x.name)}<div class="mut">${esc(x.detail)}</div></span></div>`).join('')}</div>`:''};
 
 /* ---------- share / print ---------- */
-const shareCard=()=>`<div class="card" style="background:var(--c)"><h3>📤 Share results</h3><div class="mut" style="opacity:.8">Send the standings to everyone on WhatsApp.</div><div class="row"><button class="g" onclick="waText()">💬 WhatsApp text</button><button onclick="shareImg('board')">🖼 Leaderboard image</button><button onclick="shareImg('awards')">🖼 Awards image</button><button onclick="printSheet()">🖨 Print / PDF</button><button onclick="window.open(location.pathname+'?tv','_blank')">📺 TV mode</button></div></div>`;
+const shareCard=()=>`<div class="card" style="background:var(--c)"><h3>📤 Share results</h3><div class="mut" style="opacity:.8">Send the standings to everyone on WhatsApp.</div><div class="row"><button class="g" onclick="waText()">💬 WhatsApp text</button><button onclick="shareImg('board')">🖼 Leaderboard image</button><button onclick="shareImg('podium')">🏆 Podium image</button><button onclick="shareImg('awards')">🖼 Awards image</button><button onclick="printSheet()">🖨 Print / PDF</button><button onclick="window.open(location.pathname+'?tv','_blank')">📺 TV mode</button></div></div>`;
 window.waText=()=>{const r=ranked(),pr=S.ev.prizes||[],aw=awards();
   const L=[`🎉 *PARTY BANK — ${S.ev.ended?'Final results':'Standings'}*`,''];
   r.forEach((p,i)=>L.push(`${['🥇','🥈','🥉'][i]||(i+1)+'.'} ${p.name} — ${p.net} 🪙${i<3&&pr[i]?' 🎁 '+pr[i]:''}`));
@@ -358,7 +358,7 @@ async function drawAwards(){
     x.font='400 26px Bungee, Impact, sans-serif';x.fillText(it.title.toUpperCase(),150,y+48);x.font='600 24px "Space Grotesk", sans-serif';x.fillText(fit(x,it.detail,520),150,y+84);
     x.textAlign='right';x.font='700 38px "Space Grotesk", sans-serif';x.fillText(fit(x,it.name,380),W-64,y+66)});
   if(!a.length){x.textAlign='center';x.fillStyle='#111';x.font='600 30px "Space Grotesk", sans-serif';x.fillText('No awards yet',W/2,260)}return c}
-window.shareImg=async kind=>{const c=await(kind==='awards'?drawAwards():kind==='mesh'?drawMesh():drawBoard());
+window.shareImg=async kind=>{const c=await(kind==='awards'?drawAwards():kind==='mesh'?drawMesh():kind==='podium'?drawPodium():drawBoard());
   c.toBlob(async blob=>{const f=new File([blob],`party-${kind}.png`,{type:'image/png'});
     if(navigator.canShare&&navigator.canShare({files:[f]})){try{await navigator.share({files:[f],title:'Party Bank results'});return}catch(e){if(e.name==='AbortError')return}}
     const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=f.name;a.click();toast('Image saved — attach it in WhatsApp')},'image/png')};
@@ -453,8 +453,8 @@ async function drawCard(id){
     const dia=(cx,cy,sz)=>{x.beginPath();x.moveTo(cx,cy-sz);x.lineTo(cx+sz,cy);x.lineTo(cx,cy+sz);x.lineTo(cx-sz,cy);x.closePath();x.fillStyle=metal();x.fill();x.lineWidth=4;x.strokeStyle='#111';x.stroke()};
     [[44,44],[W-44,44],[44,H-44],[W-44,H-44]].forEach(([a,b])=>dia(a,b,28));[[W/2,46],[W/2,H-46]].forEach(([a,b])=>dia(a,b,18))}
   // header
-  x.textAlign='left';x.fillStyle=T.a;font(46);x.fillText('PARTY BANK',72,112);
-  x.fillStyle='#cfc3ff';font(24,'s');x.fillText('EVENT EDITION · '+new Date().getFullYear(),74,150);
+  x.textAlign='left';x.fillStyle=T.a;font(46);x.fillText('BOOKIES',72,112);
+  x.fillStyle='#cfc3ff';font(24,'s');x.fillText('PARTY EDITION · 2026',74,150);
   if(top){x.beginPath();x.arc(W-134,102,60,0,7);x.fillStyle=metal();x.fill();x.lineWidth=6;x.strokeStyle='#111';x.stroke();x.fillStyle='#111';x.textAlign='center';font(76);x.fillText(String(rank),W-134,130)}
   else{x.textAlign='right';x.fillStyle='#fff';font(74);x.fillText('#'+rank,W-72,118)}
   // art window
@@ -491,21 +491,121 @@ async function drawCard(id){
   if(top){x.save();rr(x,0,0,W,H,62);x.clip();const g=x.createLinearGradient(0,0,W,H);g.addColorStop(.35,'rgba(255,255,255,0)');g.addColorStop(.5,'rgba(255,255,255,.16)');g.addColorStop(.65,'rgba(255,255,255,0)');x.fillStyle=g;x.fillRect(0,0,W,H);x.restore()}
   return c}
 let cardIds=[],cardI=0,cardBlob=null,cardUrl=null,cardTok=0;
-window.openCard=id=>{cardIds=ranked().map(p=>p.id).filter(i=>S.players.find(p=>p.id===i));cardI=Math.max(0,cardIds.indexOf(id));showCard()};
+window.openCard=id=>{cardKind='p';cardIds=ranked().map(p=>p.id).filter(i=>S.players.find(p=>p.id===i));cardI=Math.max(0,cardIds.indexOf(id));showCard()};
 async function showCard(){
   const V=$('#cardv'),id=cardIds[cardI],tok=++cardTok;if(!id)return;V.style.display='flex';V.innerHTML='<div style="color:#fff">Making card…</div>';
-  const c=await drawCard(id),blob=await new Promise(r=>c.toBlob(r,'image/png'));if(tok!==cardTok)return;
+  const c=await(cardKind==='s'?drawSpecial(spec(id)):drawCard(id)),blob=await new Promise(r=>c.toBlob(r,'image/png'));if(tok!==cardTok)return;
   if(cardUrl)URL.revokeObjectURL(cardUrl);cardBlob=blob;cardUrl=URL.createObjectURL(blob);
-  V.innerHTML=`<img src="${cardUrl}" alt="card"><div class="row" style="justify-content:center;margin:0"><button onclick="cardNav(-1)">◀</button><button class="g" onclick="cardShare()">📤 Share / Save</button><button onclick="cardNav(1)">▶</button><button class="r" onclick="cardClose()">Close</button></div><div style="color:#fff;font-size:13px">${cardI+1} of ${cardIds.length} · ${esc(nm(id))}</div>`}
+  V.innerHTML=`<img src="${cardUrl}" alt="card"><div class="row" style="justify-content:center;margin:0"><button onclick="cardNav(-1)">◀</button><button class="g" onclick="cardShare()">📤 Share / Save</button><button onclick="cardNav(1)">▶</button><button class="r" onclick="cardClose()">Close</button></div><div style="color:#fff;font-size:13px">${cardI+1} of ${cardIds.length} · ${esc(cardKind==='s'?spec(id).name:nm(id))}</div>`}
 window.cardNav=d=>{cardI=(cardI+d+cardIds.length)%cardIds.length;showCard()};
 window.cardClose=()=>{cardTok++;$('#cardv').style.display='none';if(cardUrl){URL.revokeObjectURL(cardUrl);cardUrl=null}};
-window.cardShare=async()=>{if(!cardBlob)return;const fn='party-card-'+nm(cardIds[cardI]).replace(/[^\w]+/g,'_')+'.png',f=new File([cardBlob],fn,{type:'image/png'});
+window.cardShare=async()=>{if(!cardBlob)return;const fn='party-card-'+(cardKind==='s'?spec(cardIds[cardI]).name:nm(cardIds[cardI])).replace(/[^\w]+/g,'_')+'.png',f=new File([cardBlob],fn,{type:'image/png'});
   if(navigator.canShare&&navigator.canShare({files:[f]})){try{await navigator.share({files:[f],title:'My Party Bank card'});return}catch(e){if(e.name==='AbortError')return}}
   const a=document.createElement('a');a.href=cardUrl;a.download=fn;a.click();toast('Card saved — send it on WhatsApp')};
 window.allCards=async()=>{const ids=ranked().map(p=>p.id).filter(i=>S.players.find(p=>p.id===i));toast('Making '+ids.length+' cards…');
   for(let k=0;k<ids.length;k++){const c=await drawCard(ids[k]),b=await new Promise(r=>c.toBlob(r,'image/png')),a=document.createElement('a');
     a.href=URL.createObjectURL(b);a.download='card-'+String(k+1).padStart(2,'0')+'-'+nm(ids[k]).replace(/[^\w]+/g,'_')+'.png';a.click();await new Promise(r=>setTimeout(r,450))}
   toast('All cards downloaded ✔')};
+
+/* ---------- special (host team) cards, podium image, compact finished bets ---------- */
+let spEdit=null,openB={},doneOpen=true,cardKind='p';
+const THEMES={
+  royal:{n:'Royal (purple & gold)',m:['#fff6c2','#ffd93d','#b8860b','#ffe98a','#ff9f1c'],p:['#14082e','#2d1763'],art:['#5b2bb0','#ff6b9d'],a:'#ffd93d'},
+  ocean:{n:'Ocean (teal & silver)',m:['#e6fffb','#7bf0e6','#2a9d8f','#c5f7f2','#1f7a70'],p:['#06232b','#0d4a55'],art:['#0f766e','#4ecdc4'],a:'#7bf0e6'},
+  sunset:{n:'Sunset (orange & red)',m:['#ffe0c2','#ffb36b','#d9531e','#ffcfa1','#b53a12'],p:['#2b0f0a','#5a2012'],art:['#c2410c','#ffd93d'],a:'#ffb36b'},
+  emerald:{n:'Emerald (green)',m:['#e3ffe9','#7bd88f','#1f8a4c','#c3f5cf','#146b3a'],p:['#06210f','#0e4a24'],art:['#15803d','#4ecdc4'],a:'#7bd88f'}};
+const spec=id=>(S.ev.staff_cards||[]).find(c=>c.id===id);
+async function drawSpecial(card){
+  try{await Promise.all([document.fonts.load('40px Bungee'),document.fonts.load('600 30px "Space Grotesk"')])}catch(e){}
+  const T=THEMES[card.theme]||THEMES.royal,W=1080,H=1512,c=document.createElement('canvas');c.width=W;c.height=H;const x=c.getContext('2d');
+  const lg=(x0,y0,x1,y1,a,b)=>{const g=x.createLinearGradient(x0,y0,x1,y1);g.addColorStop(0,a);g.addColorStop(1,b);return g};
+  const font=(px,fam)=>x.font=(fam==='s'?`700 ${px}px "Space Grotesk", sans-serif`:`400 ${px}px Bungee, Impact, sans-serif`);
+  const fitPx=(t,maxW,px,fam)=>{font(px,fam);while(px>30&&x.measureText(t).width>maxW){px-=3;font(px,fam)}return px};
+  const metal=()=>{const g=x.createLinearGradient(0,0,W,H);T.m.forEach((col,k,a)=>g.addColorStop(k/(a.length-1),col));return g};
+  let sd=(card.name||'x').length*977+31;const rnd=()=>(sd=(sd*9301+49297)%233280)/233280;
+  const star=(cx,cy,s,col)=>{x.fillStyle=col;x.beginPath();x.moveTo(cx,cy-s);x.quadraticCurveTo(cx,cy,cx+s,cy);x.quadraticCurveTo(cx,cy,cx,cy+s);x.quadraticCurveTo(cx,cy,cx-s,cy);x.quadraticCurveTo(cx,cy,cx,cy-s);x.fill()};
+  const name=(card.name||'').toUpperCase(),role=(card.role||'Host Team'),fy=-24;
+  rr(x,0,0,W,H,62);x.fillStyle=metal();x.fill();
+  rr(x,46,46,W-92,H-92,42);x.fillStyle=lg(0,0,0,H,T.p[0],T.p[1]);x.fill();
+  x.save();rr(x,46,46,W-92,H-92,42);x.clip();x.fillStyle='rgba(255,255,255,.05)';for(let yy=50;yy<H;yy+=36)for(let xx=50+((yy/36)%2)*18;xx<W;xx+=36){x.beginPath();x.arc(xx,yy,3,0,7);x.fill()}x.restore();
+  x.lineWidth=3;x.strokeStyle=T.a;rr(x,60,60,W-120,H-120,34);x.stroke();
+  const dia=(cx,cy,sz)=>{x.beginPath();x.moveTo(cx,cy-sz);x.lineTo(cx+sz,cy);x.lineTo(cx,cy+sz);x.lineTo(cx-sz,cy);x.closePath();x.fillStyle=metal();x.fill();x.lineWidth=4;x.strokeStyle='#111';x.stroke()};
+  [[44,44],[W-44,44],[44,H-44],[W-44,H-44]].forEach(([a,b])=>dia(a,b,28));[[W/2,46],[W/2,H-46]].forEach(([a,b])=>dia(a,b,18));
+  x.textAlign='left';x.fillStyle=T.a;font(46);x.fillText('BOOKIES',72,112);x.fillStyle='#cfc3ff';font(24,'s');x.fillText('PARTY EDITION · 2026',74,150);
+  x.beginPath();x.arc(W-134,102,60,0,7);x.fillStyle=metal();x.fill();x.lineWidth=6;x.strokeStyle='#111';x.stroke();x.textAlign='center';x.font='62px sans-serif';x.fillStyle='#111';x.fillText(card.emoji&&card.emoji.length<=8?card.emoji:'⭐',W-134,124);
+  // art window
+  rr(x,70,185,W-140,620,40);x.fillStyle=lg(0,185,W,805,T.art[0],T.art[1]);x.fill();
+  x.save();rr(x,70,185,W-140,620,40);x.clip();
+  for(let k=0;k<20;k++){const a0=k*Math.PI/10,a1=a0+Math.PI/20;x.fillStyle='rgba(255,255,255,.11)';x.beginPath();x.moveTo(W/2,495);x.lineTo(W/2+900*Math.cos(a0),495+900*Math.sin(a0));x.lineTo(W/2+900*Math.cos(a1),495+900*Math.sin(a1));x.closePath();x.fill()}
+  const leaf=(px,py,ang)=>{x.save();x.translate(px,py);x.rotate(ang);x.beginPath();x.ellipse(0,0,36,13,0,0,7);x.fillStyle=T.a;x.globalAlpha=.92;x.fill();x.globalAlpha=1;x.restore()};
+  for(let k=0;k<13;k++){const th=Math.PI*(.58+k*.07),px=W/2+255*Math.cos(th),py=500+255*Math.sin(th),ang=th+Math.PI/2-.45;leaf(px,py,ang);leaf(W-px,py,Math.PI-ang)}
+  const em=card.emoji&&card.emoji.length<=8?card.emoji:'',ini=(card.name.match(/[A-Za-z0-9\u0900-\u0DFF]/g)||['?']).slice(0,2).join('').toUpperCase();
+  x.textAlign='center';
+  if(em){x.font='300px sans-serif';x.fillStyle='#fff';x.fillText(em,W/2,610)}else{x.fillStyle='rgba(255,255,255,.28)';font(ini.length>1?330:420);x.fillText(ini,W/2,560)}
+  for(let k=0;k<14;k++)star(90+rnd()*(W-180),205+rnd()*580,8+rnd()*16,'rgba(255,255,255,.75)');
+  x.restore();x.lineWidth=8;x.strokeStyle=T.a;rr(x,70,185,W-140,620,40);x.stroke();
+  // role ribbon
+  const ry=708,rh=58;x.fillStyle=metal();x.beginPath();x.moveTo(108,ry);x.lineTo(W-108,ry);x.lineTo(W-76,ry+rh/2);x.lineTo(W-108,ry+rh);x.lineTo(108,ry+rh);x.lineTo(76,ry+rh/2);x.closePath();x.fill();x.lineWidth=5;x.strokeStyle='#111';x.stroke();
+  const rt='★ '+role.toUpperCase()+' ★',rp=fitPx(rt,W-300,32,'s');x.fillStyle='#111';font(rp,'s');x.textAlign='center';x.fillText(rt,W/2,ry+rh/2+rp*.34);
+  // name plate + tagline
+  rr(x,70,770,W-140,128,34);x.fillStyle=metal();x.fill();x.lineWidth=9;x.strokeStyle='#111';x.stroke();
+  const np=fitPx(name,W-220,86);font(np);x.fillStyle='#111';x.fillText(name,W/2,770+64+np*.34);
+  const tg=card.tagline||role,tp=fitPx(tg,W-160,34,'s');x.fillStyle='#fff';font(tp,'s');x.fillText(tg,W/2,948);
+  // stats
+  const DEF=[['AUTHORITY','MAX'],['BANK ACCESS','FULL'],['POWER','99'],['LUCK','∞'],['STYLE','100'],['VIBES','MAX']],
+    ST=(card.stats&&card.stats.length?card.stats.map(s=>[String(s.k).toUpperCase(),String(s.v)]):DEF).slice(0,6),bw=(W-140-48)/3;
+  ST.forEach((s,k)=>{const row=Math.floor(k/3),cnt=Math.min(3,ST.length-row*3),bx=70+(3-cnt)*(bw+24)/2+(k%3)*(bw+24),by=990+row*166;
+    rr(x,bx,by,bw,142,26);x.fillStyle='rgba(255,255,255,.09)';x.fill();x.lineWidth=3;x.strokeStyle=T.a;x.stroke();
+    x.textAlign='center';const vp=fitPx(s[1],bw-30,56);x.fillStyle='#fff';font(vp);x.fillText(s[1],bx+bw/2,by+78);x.fillStyle=T.a;const lp=fitPx(s[0],bw-24,22,'s');font(lp,'s');x.fillText(s[0],bx+bw/2,by+120)});
+  // footer
+  x.textAlign='left';x.fillStyle='#cfc3ff';font(24,'s');x.fillText('HOST TEAM',74,1360+fy);
+  const fp=fitPx(role.toUpperCase(),600,64);x.fillStyle='#fff';font(fp);x.fillText(role.toUpperCase(),70,1440+fy);
+  x.textAlign='right';x.fillStyle=T.a;font(30);x.fillText('VIP PASS',W-72,1425+fy);x.fillStyle='#cfc3ff';font(22,'s');x.fillText('BOOKIES · 2026',W-72,1470+fy);
+  x.save();rr(x,0,0,W,H,62);x.clip();const g=x.createLinearGradient(0,0,W,H);g.addColorStop(.35,'rgba(255,255,255,0)');g.addColorStop(.5,'rgba(255,255,255,.16)');g.addColorStop(.65,'rgba(255,255,255,0)');x.fillStyle=g;x.fillRect(0,0,W,H);x.restore();
+  return c}
+window.openSpecial=id=>{cardKind='s';cardIds=(S.ev.staff_cards||[]).map(c=>c.id);cardI=Math.max(0,cardIds.indexOf(id));showCard()};
+const SPF=['xn','xr','xt','xe','xq',...[1,2,3,4,5,6].flatMap(i=>['xl'+i,'xv'+i])];
+window.saveSpecial=async()=>{const name=$('#xn').value.trim();if(!name)return toast('Enter a name',1);
+  const list=[...(S.ev.staff_cards||[])],stats=[1,2,3,4,5,6].map(i=>({k:$('#xl'+i).value.trim(),v:$('#xv'+i).value.trim()})).filter(s=>s.k&&s.v);
+  const card={id:spEdit!=null&&list[spEdit]?list[spEdit].id:'c'+Date.now().toString(36),name,role:$('#xr').value.trim()||'Host Team',theme:$('#xt').value,emoji:$('#xe').value.trim(),tagline:$('#xq').value.trim(),stats};
+  if(spEdit!=null&&list[spEdit])list[spEdit]=card;else list.push(card);
+  if(await rpc('set_staff_cards',{p_cards:list})){spEdit=null;SPF.forEach(i=>{const el=$('#'+i);if(el&&i!=='xt')el.value=''});render()}};
+window.editSpecial=i=>{const c=(S.ev.staff_cards||[])[i];if(!c)return;spEdit=i;
+  $('#xn').value=c.name;$('#xr').value=c.role||'';$('#xt').value=c.theme||'royal';$('#xe').value=c.emoji||'';$('#xq').value=c.tagline||'';
+  [1,2,3,4,5,6].forEach(n=>{const s=(c.stats||[])[n-1];$('#xl'+n).value=s?s.k:'';$('#xv'+n).value=s?s.v:''});render();scrollTo(0,document.body.scrollHeight)};
+window.cancelSpecial=()=>{spEdit=null;SPF.forEach(i=>{const el=$('#'+i);if(el&&i!=='xt')el.value=''});render()};
+window.delSpecial=async i=>{const c=(S.ev.staff_cards||[])[i];if(c&&await ask('Delete the card for <b>'+esc(c.name)+'</b>?',{ok:'Delete',cls:'r'})){const l=[...S.ev.staff_cards];l.splice(i,1);rpc('set_staff_cards',{p_cards:l})}};
+function specialCard(){
+  const L=S.ev.staff_cards||[];
+  return`<div class="card" style="background:var(--v)"><h3 style="color:#fff">🎖 Special cards (host team)</h3><div class="mut" style="color:#fff">Make cards for the super admin, co-hosts and community admins. Fill in the details, save, then generate.</div>
+  <div class="row"><input id="xn" placeholder="Name" style="flex:1"><input id="xr" list="xroles" placeholder="Role e.g. Co-Host" style="flex:1"><datalist id="xroles"><option>Super Admin</option><option>Co-Host</option><option>Community Admin</option><option>Moderator</option><option>Special Guest</option></datalist></div>
+  <div class="row"><select id="xt">${Object.entries(THEMES).map(([k,t])=>`<option value="${k}">${t.n}</option>`).join('')}</select><input id="xe" placeholder="Emoji avatar (optional) 🦁" style="width:190px"></div>
+  <div class="row"><input id="xq" placeholder="Tagline e.g. Keeper of the Bank" style="width:100%"></div>
+  <div class="mut" style="color:#fff;margin-top:8px">Stats — up to 6 (leave all blank for default stats)</div>
+  ${[1,2,3,4,5,6].map(i=>`<div class="row" style="margin-top:4px"><input id="xl${i}" placeholder="Label ${i}" style="flex:1"><input id="xv${i}" placeholder="Value" style="width:90px"></div>`).join('')}
+  <div class="row"><button class="g" onclick="saveSpecial()">${spEdit!=null?'💾 Update card':'➕ Save card'}</button>${spEdit!=null?'<button onclick="cancelSpecial()">Cancel edit</button>':''}</div>
+  ${L.length?`<div style="margin-top:12px;background:var(--card);color:var(--txt);border:3px solid var(--line);border-radius:12px;padding:8px 10px">${L.map((c,i)=>`<div class="ln"><span><b>${esc(c.name)}</b> <span class="mut">${esc(c.role||'')}</span></span><span class="row" style="margin:0"><button class="g" style="padding:2px 8px" onclick="openSpecial('${c.id}')">🃏</button><button style="padding:2px 8px" onclick="editSpecial(${i})">✎</button><button class="r" style="padding:2px 8px" onclick="delSpecial(${i})">✕</button></span></div>`).join('')}<div class="row"><button onclick="openSpecial()">Open all special cards</button></div></div>`:''}</div>`}
+async function drawPodium(){
+  const r=ranked().slice(0,3),pr=S.ev.prizes||[],{c,x,W}=await canvasFor(1400,S.ev.ended?'FINAL PODIUM':'CURRENT PODIUM');
+  let sd=11;const rnd=()=>(sd=(sd*9301+49297)%233280)/233280,cols=['#ffd93d','#ff6b9d','#4ecdc4','#9b5de5','#7bd88f','#ff5a4f'];
+  for(let k=0;k<110;k++){x.save();x.translate(rnd()*W,200+rnd()*1000);x.rotate(rnd()*6);x.fillStyle=cols[k%6];x.globalAlpha=.8;x.fillRect(-6,-10,12,20);x.restore()}
+  const base=1200,w=300,D=[{i:0,cx:540,h:420,col:['#fff6c2','#ffd93d','#b8860b'],m:'🥇'},{i:1,cx:225,h:300,col:['#ffffff','#cfd8dc','#7b8a94'],m:'🥈'},{i:2,cx:855,h:220,col:['#ffd9b0','#e8a96a','#8a4a16'],m:'🥉'}];
+  D.forEach(d=>{const p=r[d.i];if(!p)return;const top=base-d.h,g=x.createLinearGradient(d.cx-w/2,0,d.cx+w/2,0);g.addColorStop(0,d.col[1]);g.addColorStop(.5,d.col[0]);g.addColorStop(1,d.col[2]);
+    rr(x,d.cx-w/2,top,w,d.h,16);x.fillStyle=g;x.fill();x.lineWidth=6;x.strokeStyle='#111';x.stroke();
+    x.textAlign='center';x.fillStyle='#111';x.font='400 130px Bungee, Impact, sans-serif';x.fillText(String(d.i+1),d.cx,top+150);
+    if(pr[d.i]){x.font='700 24px "Space Grotesk", sans-serif';x.fillText('🎁 '+fit(x,pr[d.i],w-30),d.cx,top+d.h-24)}
+    x.font='400 38px Bungee, Impact, sans-serif';x.fillText(String(p.net),d.cx,top-26);
+    let px=42;x.font=`400 ${px}px Bungee, Impact, sans-serif`;const nmx=p.name.toUpperCase();while(px>22&&x.measureText(nmx).width>w+60){px-=3;x.font=`400 ${px}px Bungee, Impact, sans-serif`}x.fillText(nmx,d.cx,top-82);
+    x.font='96px sans-serif';x.fillText(d.m,d.cx,top-150);if(d.i===0){x.font='80px sans-serif';x.fillText('👑',d.cx,top-250)}});
+  x.fillStyle='#111';x.fillRect(60,base,W-120,24);x.textAlign='center';x.font='400 56px Bungee, Impact, sans-serif';x.fillText(S.ev.ended?'CONGRATULATIONS!':'WHO WILL TAKE THE CROWN?',W/2,1310);
+  x.font='600 26px "Space Grotesk", sans-serif';x.fillText(`${S.players.length} players · net tokens shown`,W/2,1355);return c}
+function compactBet(b,host){
+  const o=!!openB[b.id],res=b.status==='settled'?'👑 '+esc(b.options[b.winning]):'void',st=b.stake!=null?' · '+b.stake+'🪙':'';
+  if(o)return betCard(b,host)+`<div class="row" style="margin:-8px 0 10px"><button style="padding:2px 12px" onclick="toggleB(${b.id})">▴ Collapse</button></div>`;
+  return`<div class="card" onclick="toggleB(${b.id})" style="padding:10px 12px;margin:10px 0;cursor:pointer"><div class="row" style="margin:0;justify-content:space-between;flex-wrap:nowrap;gap:10px"><span style="min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap"><b>${esc(b.game)}</b> · ${esc(b.title)}</span><span style="white-space:nowrap">${res}${st} <b>▸</b></span></div></div>`}
+window.toggleB=id=>{openB[id]=!openB[id];render()};
+window.toggleDone=()=>{doneOpen=!doneOpen;render()};
+const finishedSec=(done,host)=>done.length?`<div class="row" onclick="toggleDone()" style="cursor:pointer;justify-content:space-between;margin-top:18px"><h2>Finished (${done.length})</h2><button>${doneOpen?'▾ Hide':'▸ Show'}</button></div>${doneOpen?done.map(b=>compactBet(b,host)).join(''):''}`:'';
 
 function render(){
   const m={};document.querySelectorAll('#app [id]').forEach(el=>{if(/INPUT|SELECT|TEXTAREA/.test(el.tagName))m[el.id]=el.type==='checkbox'?el.checked:el.value});
@@ -523,14 +623,15 @@ function render(){
     <div class="card"><div class="mut">LIVE BETS</div><div class="big">${live}</div></div></div>
     ${top10()}
     ${best?`<div class="card"><h3>Highlights</h3><div class="ln"><span>🚀 Biggest gain</span><b>${esc(best.name)} ${sg(best.net-START)}</b></div><div class="ln"><span>📉 Biggest drop</span><b>${esc(worst.name)} ${sg(worst.net-START)}</b></div></div>`:''}
-    ${awardsCard()}${staff?shareCard():''}${activity(12)}`;
+    ${awardsCard()}${activity(12)}`;
   }else if(tab==='people'){
     const q=Q.trim().toLowerCase(),list=byName().filter(p=>p.name.toLowerCase().includes(q));
     v=`${viewP&&S.players.find(p=>p.id===viewP)?pdetail(viewP):''}<div class="card"><h2>👥 Everyone (${S.players.length})</h2><div class="row"><input id="q" placeholder="Search name…" value="${esc(Q)}" oninput="Q=this.value;render()" style="width:100%"></div>
     ${list.map(p=>`<div class="lb" onclick="openP(${p.id})" style="cursor:pointer"><span>${esc(p.name)}${p.loan?` <small class="mut">🆘 owes ${p.loan}</small>`:''}</span><b style="width:auto">${p.balance}🪙</b><small>${sg(p.balance-(p.loan||0)-START)}</small></div>`).join('')||'<div class="mut" style="margin-top:8px">No players found</div>'}</div>`;
   }else if(tab==='eco'){v=ecoView();
   }else if(tab==='bets'){
-    v=gameBoard()+(S.bets.length?S.bets.map(b=>betCard(b,false)).join(''):'<div class="card">No bets yet. Hang tight! 🎲</div>');
+    {const lv=S.bets.filter(b=>b.status==='open'||b.status==='locked'),dn=S.bets.filter(b=>b.status==='settled'||b.status==='void');
+    v=gameBoard()+(S.bets.length?lv.map(b=>betCard(b,false)).join('')+finishedSec(dn,false):'<div class="card">No bets yet. Hang tight! 🎲</div>')}
   }else if(!staff){
     v=`<div class="card" style="margin-top:40px;background:var(--y)"><h2>🔑 Host</h2><div class="row"><input id="sc" type="password" placeholder="Super admin or co-host code"><button class="g" onclick="unlock()">Unlock</button></div></div>`;
   }else{
@@ -546,7 +647,7 @@ function render(){
     <div class="row"><input id="ad" type="number" placeholder="+/- tokens" style="width:120px"><input id="ar" placeholder="Reason" style="flex:1"><button class="g" onclick="adj()">Apply</button></div>
     <div class="row"><button onclick="undoAdj()"${la?'':' disabled'}>↩ Undo last adjustment</button><span class="mut">${la?la.txt:'Nothing to undo yet'}</span></div></div>`:''}
     <div class="card" style="background:var(--v)"><h3 style="color:#fff">⚔️ New duel</h3><div class="mut" style="color:#fff">Pick a player, an opponent (or the Bank) and a stake. Winner gets double. Max stake: ${S.ev.max_stake||'no limit'}.</div><div class="row"><select id="vg">${GAMES.map(g=>`<option>${esc(g)}</option>`).join('')}</select><input id="vs" type="number" min="1" placeholder="stake" style="width:100px"></div><div class="row">${[50,100,250,500].map(n=>`<button class="c" onclick="qs(${n})"${S.ev.max_stake>0&&n>S.ev.max_stake?' disabled':''}>${n}</button>`).join('')}</div><div class="row"><select id="va">${po}</select><b style="color:#fff">VS</b><select id="vb"><option value="bank">🏦 Bank</option>${po}</select></div><div class="row"><input id="vt" placeholder="Title (optional)" style="width:100%"></div><div class="row"><button class="g" onclick="mkduel()">Start duel</button></div></div>
-    <h2>Live bets</h2>${open.map(b=>betCard(b,true)).join('')||'<div class="card">No live bets</div>'}<h2>Finished</h2>${done.map(b=>betCard(b,true)).join('')}
+    <h2>Live bets</h2>${open.map(b=>betCard(b,true)).join('')||'<div class="card">No live bets</div>'}${finishedSec(done,true)}
     ${staff?`<div class="card" style="background:var(--y)"><h3>🏦 Bank wallet: ${S.bank}🪙</h3><div class="row"><input id="bka" type="number" min="1" placeholder="tokens" style="width:110px"><input id="bkr" placeholder="Reason (optional)" style="flex:1"></div><div class="row"><button class="g" onclick="bankAdj(1)">➕ Add to bank</button><button class="r" onclick="bankAdj(-1)">➖ Remove</button></div></div>
     <div class="card"><h3>🆘 Rescue loan</h3><div class="mut">One-time loan of 100 tokens from the bank, only for players under 50 tokens. Counts against their ranking until repaid.</div>${lo?`<div class="row"><select id="lp">${lo}</select><button class="c" onclick="loan()">Give 100 loan</button></div>`:'<div class="mut" style="margin-top:8px">No eligible player right now (under 50 tokens and no loan taken yet).</div>'}
     ${S.players.filter(p=>p.loan>0).map(p=>`<div class="ln"><span>${esc(p.name)} owes <b>${p.loan}</b></span><button onclick="repay(${p.id})">Repay</button></div>`).join('')}</div>
@@ -555,7 +656,9 @@ function render(){
     <div class="row"><button class="${S.ev.show_economy===false?'g':'r'}" onclick="setEco()">${S.ev.show_economy===false?'👁 Show Economy tab to everyone':'🙈 Hide Economy tab from guests'}</button><span class="mut">Currently ${S.ev.show_economy===false?'hidden from guests (co-hosts and you still see it)':'visible to everyone'}</span></div>
     <div class="mut" style="margin-top:10px">Prizes are optional real-world rewards (e.g. “Chocolate box”). They show under the winners’ names on the podium and in the ceremony. The winners themselves are picked automatically from the leaderboard.</div><div class="row"><input id="pz1" placeholder="🥇 1st prize (optional)" value="${esc(pz[0]||'')}" style="width:100%"><input id="pz2" placeholder="🥈 2nd prize (optional)" value="${esc(pz[1]||'')}" style="width:100%"><input id="pz3" placeholder="🥉 3rd prize (optional)" value="${esc(pz[2]||'')}" style="width:100%"></div>
     <div class="row"><button class="g" onclick="saveEv()">Save</button><button onclick="clearPz()">Clear prizes</button>${S.ev.ended?'<button class="c" onclick="ceremony()">🏅 Replay ceremony</button>':''}${S.ev.ended?'<button onclick="endEv(false)">Reopen event</button>':'<button class="r" onclick="endEv(true)">🏁 End event</button>'}</div></div>`:''}
+    ${shareCard()}
     <div class="card" style="background:var(--p)"><h3>🃏 Player cards</h3><div class="mut" style="color:#111">A trading-card image for every player to brag about. Flip through, then share each one on WhatsApp.</div><div class="row"><button class="g" onclick="openCard()">Open card viewer</button><button onclick="allCards()">⬇ Download all</button></div></div>
+    ${sup?specialCard():''}
     <div class="card"><h3>💾 Backup</h3><div class="mut">Download a copy in case anything goes wrong mid-party.</div><div class="row"><button onclick="bkBal()">Balances CSV</button><button onclick="bkLed()">Full history CSV</button></div></div>
     ${staff?`<div class="card"><h3>Players</h3>${byName().map(p=>`<div class="ln"><span>${esc(p.name)} <small class="mut">${p.balance}🪙</small></span><button class="r" style="padding:2px 8px" onclick="rmp(${p.id})">✕</button></div>`).join('')}</div>
     `:''}
