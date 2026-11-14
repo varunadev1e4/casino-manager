@@ -31,15 +31,25 @@ textarea{width:100%;min-height:80px}input{min-width:0}
 .ln{display:flex;justify-content:space-between;gap:8px;align-items:center;padding:6px 0;border-bottom:2px dashed #0003;font-size:15px}
 .mut{opacity:.6;font-size:14px}.pos{color:#0a7d3b}.neg{color:#c4271d}
 nav{position:fixed;bottom:0;left:0;right:0;display:flex;gap:6px;justify-content:center;padding:10px;background:var(--v);border-top:4px solid var(--ink)}
-nav button{flex:1;max-width:130px;padding:8px 4px;font-size:14px}nav button.on{background:var(--p)}
+nav button{flex:1;max-width:110px;padding:5px 2px;font-size:11px;line-height:1.1;display:flex;flex-direction:column;align-items:center;gap:2px}nav button span{font-size:20px}nav button.on{background:var(--p)}
 #toast{position:fixed;top:70px;left:50%;transform:translateX(-50%);z-index:30;background:var(--g);border:3px solid var(--ink);border-radius:12px;box-shadow:4px 4px 0 var(--ink);padding:8px 16px;display:none;max-width:90vw}
 #toast.err{background:var(--r)}
 #modal{position:fixed;inset:0;background:#0007;display:none;align-items:center;justify-content:center;z-index:20;padding:20px}
 #modal .card{max-width:380px;width:100%;margin:0;background:var(--y)}#mm{font-size:18px;line-height:1.35}#modal input{width:100%;margin-top:12px}
 .lb{display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:2px dashed #0003}.lb b{font:400 20px Bungee;width:44px}.lb span{flex:1}
 .tv .lb{font-size:26px;padding:12px 0}.tv .lb b{font-size:28px;width:70px}.tv h2{font-size:34px}.tv .ln{font-size:20px}
+#flash{position:fixed;top:70px;left:50%;transform:translateX(-50%);z-index:25;display:none;background:var(--y);border:3px solid var(--ink);border-radius:14px;box-shadow:5px 5px 0 var(--ink);padding:12px 18px;font-size:18px;max-width:92vw;text-align:center}
+.cf{position:absolute;top:-20px;width:10px;height:14px;animation:fall linear forwards;pointer-events:none}@keyframes fall{to{transform:translateY(110vh) rotate(720deg)}}
+#cer{position:fixed;inset:0;z-index:40;background:radial-gradient(circle at 50% 0%,#5b2bb0,#1c0f3d);color:#fff;display:none;flex-direction:column;align-items:center;justify-content:center;padding:16px;overflow:hidden}
+#cer h2{font-family:Bungee,Impact,sans-serif;font-weight:400}
+.pod{display:flex;align-items:flex-end;justify-content:center;gap:10px;height:340px;width:100%;max-width:560px}
+.step{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:flex-end;min-width:0}
+.who{opacity:0;transform:translateY(24px);transition:.7s;text-align:center;margin-bottom:8px}.who.show{opacity:1;transform:none}
+.blk{width:100%;height:0;overflow:hidden;border:3px solid #111;border-bottom:0;border-radius:12px 12px 0 0;color:#111;font:400 44px Bungee,Impact,sans-serif;text-align:center;padding-top:8px;transition:height 1.2s cubic-bezier(.2,.9,.3,1.15)}
+#sheet{display:none}
+@media print{body{background:#fff;padding:0}body>*:not(#sheet){display:none!important}#sheet{display:block;font:14px 'Space Grotesk',Arial,sans-serif;color:#000}#sheet h1{font-size:26px;margin:0 0 4px}#sheet h2{font-size:18px;margin:18px 0 6px}#sheet table{width:100%;border-collapse:collapse}#sheet td,#sheet th{border-bottom:1px solid #999;padding:4px 6px;text-align:left}@page{margin:14mm}}
 </style></head>
-<body><div id="app"></div><div id="toast"></div>
+<body><div id="app"></div><div id="toast"></div><div id="cer"></div><div id="flash"></div><div id="sheet"></div>
 <div id="modal"><div class="card"><div id="mm"></div><input id="mi" autocomplete="off"><div class="row" style="justify-content:flex-end"><button id="mn">Cancel</button><button id="my" class="g">Confirm</button></div></div></div>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
 <script>
@@ -49,6 +59,7 @@ const $=s=>document.querySelector(s);
 const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const GAMES=['Flip 7','Exploding Kittens','Blackjack','Least Count','Mafia','Trivia Quiz',"Don't Say Same Thing",'Whole Party','Other'];
 const START=1000, TV=new URLSearchParams(location.search).has('tv');
+let booted=false,seen=null,cerT=[];
 let S={players:[],bank:0,bets:[],entries:[],ledger:[],ev:{ended:false,prizes:[],final:null,max_stake:500}},tab='home',timer,code=null,role=null,viewP=null,Q='';
 const nm=id=>id?(S.players.find(p=>p.id===id)?.name||'?'):'🏦 Bank';
 const tm=t=>new Date(t).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'});
@@ -79,8 +90,12 @@ async function load(){
   const [p,b,bt,e,l,ev]=await Promise.all([sb.from('players').select('*'),sb.from('bank').select('balance').single(),
     sb.from('bets').select('*').order('id',{ascending:false}),sb.from('entries').select('*'),
     sb.from('ledger').select('*').order('id',{ascending:false}).limit(1000),sb.from('event').select('*').single()]);
+  const was=S.ev.ended;
   S.players=p.data||[];S.bank=b.data?.balance??0;S.bets=bt.data||[];S.entries=e.data||[];S.ledger=l.data||[];
-  if(ev.data)S.ev=ev.data;render();
+  if(ev.data)S.ev=ev.data;
+  render();checkSettled();
+  if(booted&&!was&&S.ev.ended)ceremony();
+  booted=true;
 }
 
 /* ---------- actions ---------- */
@@ -144,7 +159,7 @@ function betCard(b,host){
 }
 const lbRow=(p,i)=>`<div class="lb" onclick="openP(${p.id})" style="cursor:pointer"><b>${['🥇','🥈','🥉'][i]||'#'+(i+1)}</b><span>${esc(p.name)}${p.loan?` <small class="mut">🆘 owes ${p.loan}</small>`:''}</span><b style="width:auto">${p.balance}🪙</b><small>${sg(p.net-START)}</small></div>`;
 function podium(){if(!S.ev.ended)return'';const r=ranked().slice(0,3),pr=S.ev.prizes||[];
-  return`<div class="card" style="background:var(--g)"><h2>🏁 Final results</h2>${r.map((p,i)=>`<div class="lb"><b>${['🥇','🥈','🥉'][i]}</b><span>${esc(p.name)}${pr[i]?`<div class="mut">🎁 ${esc(pr[i])}</div>`:''}</span><b style="width:auto">${p.net}🪙</b></div>`).join('')}</div>`}
+  return`<div class="card" style="background:var(--g)"><h2>🏁 Final results</h2>${r.map((p,i)=>`<div class="lb"><b>${['🥇','🥈','🥉'][i]}</b><span>${esc(p.name)}${pr[i]?`<div class="mut">🎁 ${esc(pr[i])}</div>`:''}</span><b style="width:auto">${p.net}🪙</b></div>`).join('')}<div class="row"><button class="c" onclick="ceremony()">🏅 Replay ceremony</button></div></div>`}
 const top10=()=>`<div class="card" style="background:var(--y)"><h2>🏆 Top 10</h2>${ranked().slice(0,10).map(lbRow).join('')||'<div class="mut">Waiting for players…</div>'}${S.players.some(p=>p.loan)?'<div class="mut" style="margin-top:6px">Ranked by net = tokens − loans</div>':''}</div>`;
 const activity=n=>`<div class="card"><h3>Latest activity</h3>${S.ledger.slice(0,n).map(l=>`<div class="ln"><span>${esc(nm(l.player_id))}: ${esc(l.reason)}<div class="mut">${tm(l.created_at)}</div></span><b>${sg(l.delta)}</b></div>`).join('')||'<div class="mut">Nothing yet</div>'}</div>`;
 function pstats(id){
@@ -157,6 +172,132 @@ function pdetail(id){const p=S.players.find(x=>x.id===id),st=pstats(id);
   <div class="big" style="margin-top:8px">${p.balance}🪙</div>${p.loan?`<div class="mut" style="opacity:.8">🆘 owes ${p.loan} · net ${p.balance-p.loan}</div>`:''}
   <div class="row"><span class="chip" style="background:#fff">Played ${st.n}</span><span class="chip" style="background:#fff">Won ${st.w}</span><span class="chip" style="background:#fff">Lost ${st.n-st.w}</span><span class="chip" style="background:#fff">Bets net ${sg(st.net)}</span>${st.streak>1?`<span class="chip" style="background:#fff">${st.sw?'🔥 '+st.streak+' wins in a row':'🧊 '+st.streak+' losses in a row'}</span>`:''}</div>
   <div style="margin-top:8px">${st.rows.slice(0,8).map(r=>`<div class="ln"><span>${esc(r.b.game)} · ${esc(r.b.title)}</span><b>${r.win?'✅':'❌'} ${sg(r.net)}</b></div>`).join('')||'<div class="mut">No settled bets yet</div>'}</div></div>`}
+
+/* ---------- economy ---------- */
+const bar=(v,mx)=>`<div style="height:12px;border:2px solid #111;border-radius:6px;background:#fff;position:relative;overflow:hidden"><div style="position:absolute;top:0;bottom:0;${v>=0?'left:50%':'right:50%'};width:${mx?Math.min(50,Math.abs(v)/mx*50):0}%;background:${v>=0?'var(--g)':'var(--r)'}"></div><div style="position:absolute;left:50%;top:0;bottom:0;width:2px;background:#111"></div></div>`;
+const bar1=(v,mx,col)=>`<div style="height:12px;border:2px solid #111;border-radius:6px;background:#fff;overflow:hidden"><div style="height:100%;width:${mx?Math.min(100,v/mx*100):0}%;background:${col}"></div></div>`;
+function ecoData(){
+  const cats={},bankRows=S.ledger.filter(l=>!l.player_id);
+  const cat=r=>/^Stake from/.test(r)?'Player stakes in':/^Payout/.test(r)?'Payouts to winners':/^Refund/.test(r)?'Refunds':/^Result reversed/.test(r)?'Reversed results':/^Rescue loan/.test(r)?'Rescue loans out':/^Loan repaid/.test(r)?'Loans repaid in':/^Undo/.test(r)?'Undone adjustments':'Host top-ups / removals';
+  let bin=0,bout=0;bankRows.forEach(l=>{const k=cat(l.reason||'');cats[k]=(cats[k]||0)+l.delta;if(l.delta>=0)bin+=l.delta;else bout+=-l.delta});
+  const vs={};S.bets.filter(b=>b.mode==='bank'&&b.status==='settled').forEach(b=>S.entries.filter(e=>e.bet_id===b.id).forEach(e=>{vs[e.player_id]=(vs[e.player_id]||0)+(e.payout||0)-e.stake}));
+  const pair={};let duels=0;
+  S.bets.filter(b=>b.mode==='pvp'&&b.status==='settled').forEach(b=>{const es=S.entries.filter(e=>e.bet_id===b.id),w=es.find(e=>(e.payout||0)>0),l=es.find(e=>!((e.payout||0)>0));
+    if(!w||!l)return;duels++;const a=w.player_id,c=l.player_id,k=Math.min(a,c)+'|'+Math.max(a,c);pair[k]=(pair[k]||0)+(a<c?l.stake:-l.stake)});
+  const flows=Object.entries(pair).filter(([,v])=>v!==0).map(([k,v])=>{const [lo,hi]=k.split('|').map(Number);return v>0?{from:hi,to:lo,amt:v}:{from:lo,to:hi,amt:-v}}).sort((a,b)=>b.amt-a.amt);
+  const escrow=S.entries.filter(e=>{const b=S.bets.find(x=>x.id===e.bet_id);return b&&b.mode==='pvp'&&(b.status==='open'||b.status==='locked')}).reduce((a,e)=>a+e.stake,0);
+  const adjR=S.ledger.filter(l=>l.player_id&&l.adj_batch&&!l.undone);
+  return{cats,bin,bout,vs,flows,duels,escrow,
+    bonus:adjR.filter(l=>l.delta>0).reduce((a,l)=>a+l.delta,0),penalty:adjR.filter(l=>l.delta<0).reduce((a,l)=>a+l.delta,0),
+    welcome:S.ledger.filter(l=>l.reason==='Welcome tokens').reduce((a,l)=>a+l.delta,0),
+    held:S.players.reduce((a,p)=>a+p.balance,0),loans:S.players.reduce((a,p)=>a+(p.loan||0),0),
+    bankBets:S.bets.filter(b=>b.mode==='bank'&&b.status==='settled').length}}
+function ecoView(){
+  const d=ecoData(),stakes=d.cats['Player stakes in']||0,out=-(d.cats['Payouts to winners']||0)-(d.cats['Rescue loans out']||0);
+  const vsRows=Object.entries(d.vs).map(([id,n])=>({id:+id,n})).sort((a,b)=>b.n-a.n),vmx=Math.max(1,...vsRows.map(r=>Math.abs(r.n)));
+  const catRows=Object.entries(d.cats).filter(([,v])=>v!==0),cmx=Math.max(1,...catRows.map(([,v])=>Math.abs(v)));
+  const fmx=Math.max(1,...d.flows.map(f=>f.amt)),bnet=vsRows.reduce((a,r)=>a-r.n,0);
+  return`<div class="card" style="background:var(--c)"><h2>💱 Economy</h2><div class="mut" style="opacity:.8">Where the tokens are and how they move.</div>
+  <div class="row"><span class="chip" style="background:#fff">👥 Players ${d.held}🪙</span><span class="chip" style="background:#fff">🏦 Bank ${S.bank}🪙</span>${d.escrow?`<span class="chip" style="background:#fff">⏳ In live duels ${d.escrow}🪙</span>`:''}</div></div>
+  <div class="card"><h3>Players ⇄ Bank</h3>
+  <div style="display:flex;align-items:center;gap:8px;margin-top:12px"><div style="border:3px solid #111;border-radius:12px;padding:10px;background:var(--c);text-align:center;min-width:92px">👥<br>Players</div>
+  <div style="flex:1;text-align:center;font-size:14px"><div>➜ stakes in <b>${stakes}</b></div><div style="margin-top:4px">⬅ payouts &amp; loans out <b>${out}</b></div></div>
+  <div style="border:3px solid #111;border-radius:12px;padding:10px;background:var(--y);text-align:center;min-width:92px">🏦<br>Bank</div></div>
+  <div class="ln" style="margin-top:10px"><span>Bank result from ${d.bankBets} settled bet(s)</span><b>${sg(bnet)}</b></div></div>
+  <div class="card"><h3>🏦 Bank movements</h3>${catRows.map(([k,v])=>`<div style="margin-top:8px"><div class="ln" style="border:0;padding:0"><span>${k}</span><b>${sg(v)}</b></div>${bar(v,cmx)}</div>`).join('')||'<div class="mut">No bank movement yet</div>'}</div>
+  <div class="card"><h3>🦈 Players vs Bank</h3><div class="mut">Green: beating the bank · Red: feeding it</div>${vsRows.map(r=>`<div style="margin-top:8px"><div class="ln" style="border:0;padding:0"><span>${esc(nm(r.id))}</span><b>${sg(r.n)}</b></div>${bar(r.n,vmx)}</div>`).join('')||'<div class="mut" style="margin-top:6px">No settled bank bets yet</div>'}</div>
+  <div class="card"><h3>⚔️ Player → Player</h3><div class="mut">Net tokens moved between players in ${d.duels} settled duel(s)</div>${d.flows.slice(0,10).map(f=>`<div style="margin-top:8px"><div class="ln" style="border:0;padding:0"><span>${esc(nm(f.from))} ➜ ${esc(nm(f.to))}</span><b>${f.amt}🪙</b></div>${bar1(f.amt,fmx,'var(--v)')}</div>`).join('')||'<div class="mut" style="margin-top:6px">No settled duels yet</div>'}</div>
+  <div class="card"><h3>🎁 Tokens created / removed by the host</h3><div class="ln"><span>Welcome tokens issued</span><b>${d.welcome}</b></div><div class="ln"><span>Bonuses given</span><b>${sg(d.bonus)}</b></div><div class="ln"><span>Penalties taken</span><b>${sg(d.penalty)}</b></div><div class="ln"><span>Loans outstanding</span><b>${d.loans}</b></div></div>`;
+}
+
+/* ---------- awards ---------- */
+function awards(){
+  const st={};S.players.forEach(p=>st[p.id]={name:p.name,staked:0,duelW:0,bankNet:0,bestWin:0,ser:[]});
+  [...S.bets].filter(b=>b.status==='settled').sort((a,b)=>a.id-b.id).forEach(b=>S.entries.filter(e=>e.bet_id===b.id).forEach(e=>{
+    const s=st[e.player_id];if(!s)return;const win=(e.payout||0)>0,net=(e.payout||0)-e.stake;
+    s.staked+=e.stake;if(b.mode==='pvp'&&win)s.duelW++;if(b.mode==='bank')s.bankNet+=net;if(win&&net>s.bestWin)s.bestWin=net;s.ser.push(win)}));
+  const run={},mn={};
+  if(S.ledger.length<1000)[...S.ledger].reverse().forEach(l=>{if(!l.player_id||!st[l.player_id])return;const id=l.player_id;run[id]=(run[id]||0)+l.delta;mn[id]=Math.min(mn[id]??Infinity,run[id])});
+  const L=Object.entries(st).map(([id,s])=>{let w=0,l=0,cw=0,cl=0;s.ser.forEach(x=>{if(x){cw++;cl=0}else{cl++;cw=0}w=Math.max(w,cw);l=Math.max(l,cl)});
+    const p=S.players.find(x=>x.id===+id);return{...s,maxW:w,maxL:l,comeback:mn[id]!=null?p.balance-mn[id]:0}});
+  const out=[],pick=(icon,title,key,min,fmt,low)=>{const c=L.filter(x=>low?x[key]<-min+1:x[key]>=min).sort((a,b)=>low?a[key]-b[key]:b[key]-a[key])[0];if(c)out.push({icon,title,name:c.name,detail:fmt(c)})};
+  const r=ranked();if(r.length&&(r[0].net!==START||S.ev.ended))out.push({icon:'👑',title:'Champion',name:r[0].name,detail:r[0].net+' tokens'});
+  pick('🎰','High Roller','staked',1,c=>c.staked+' tokens staked');
+  pick('🚀','Biggest Win','bestWin',1,c=>'+'+c.bestWin+' in one bet');
+  pick('🔥','Hot Streak','maxW',2,c=>c.maxW+' wins in a row');
+  pick('🧊','Ice Cold','maxL',2,c=>c.maxL+' losses in a row');
+  pick('🦈','Bank Buster','bankNet',1,c=>'+'+c.bankNet+' from the Bank');
+  pick('💸',"Bank's Best Friend",'bankNet',1,c=>Math.abs(c.bankNet)+' lost to the Bank',true);
+  pick('⚔️','Duel Master','duelW',1,c=>c.duelW+' duel wins');
+  pick('🎢','Comeback King','comeback',100,c=>'climbed back +'+c.comeback);
+  return out}
+const awardsCard=()=>{const a=awards();return a.length?`<div class="card"><h3>🏅 Awards</h3>${a.map(x=>`<div class="ln"><span>${x.icon} <b>${x.title}</b></span><span style="text-align:right">${esc(x.name)}<div class="mut">${esc(x.detail)}</div></span></div>`).join('')}</div>`:''};
+
+/* ---------- share / print ---------- */
+const shareCard=()=>`<div class="card" style="background:var(--c)"><h3>📤 Share results</h3><div class="mut" style="opacity:.8">Send the standings to everyone on WhatsApp.</div><div class="row"><button class="g" onclick="waText()">💬 WhatsApp text</button><button onclick="shareImg('board')">🖼 Leaderboard image</button><button onclick="shareImg('awards')">🖼 Awards image</button><button onclick="printSheet()">🖨 Print / PDF</button><button onclick="window.open(location.pathname+'?tv','_blank')">📺 TV mode</button></div></div>`;
+window.waText=()=>{const r=ranked(),pr=S.ev.prizes||[],aw=awards();
+  const L=[`🎉 *PARTY BANK — ${S.ev.ended?'Final results':'Standings'}*`,''];
+  r.forEach((p,i)=>L.push(`${['🥇','🥈','🥉'][i]||(i+1)+'.'} ${p.name} — ${p.net} 🪙${i<3&&pr[i]?' 🎁 '+pr[i]:''}`));
+  if(aw.length){L.push('','*Awards*');aw.forEach(a=>L.push(`${a.icon} ${a.title}: ${a.name} (${a.detail})`))}
+  L.push('',`🏦 Bank: ${S.bank} 🪙`);window.open('https://wa.me/?text='+encodeURIComponent(L.join('\n')),'_blank')};
+function rr(x,a,b,w,h,r){x.beginPath();x.moveTo(a+r,b);x.arcTo(a+w,b,a+w,b+h,r);x.arcTo(a+w,b+h,a,b+h,r);x.arcTo(a,b+h,a,b,r);x.arcTo(a,b,a+w,b,r);x.closePath()}
+async function canvasFor(h,sub){
+  try{await Promise.all([document.fonts.load('40px Bungee'),document.fonts.load('600 30px "Space Grotesk"')])}catch(e){}
+  const W=1080,c=document.createElement('canvas');c.width=W;c.height=h;const x=c.getContext('2d');
+  x.fillStyle='#fff3d6';x.fillRect(0,0,W,h);x.fillStyle='#ff6b9d';x.fillRect(0,0,W,170);x.fillStyle='#111';x.fillRect(0,170,W,8);
+  x.textAlign='center';x.font='400 66px Bungee, Impact, sans-serif';x.fillText('PARTY BANK',W/2,98);
+  x.font='600 30px "Space Grotesk", sans-serif';x.fillText(sub+' · '+new Date().toLocaleDateString(),W/2,146);return{c,x,W}}
+const fit=(x,t,w)=>{while(t.length>3&&x.measureText(t).width>w)t=t.slice(0,-2);return t};
+async function drawBoard(){
+  const r=ranked(),pr=S.ev.prizes||[],rh=84,H=230+r.length*rh+110,{c,x,W}=await canvasFor(H,S.ev.ended?'FINAL RESULTS':'STANDINGS');
+  const tint=['#ffd93d','#e4eaee','#e8a96a'];
+  r.forEach((p,i)=>{const y=210+i*rh;x.fillStyle=tint[i]||'#fff';rr(x,40,y,W-80,rh-12,16);x.fill();x.lineWidth=4;x.strokeStyle='#111';x.stroke();
+    x.textAlign='left';x.fillStyle='#111';x.font='400 34px Bungee, Impact, sans-serif';x.fillText(['🥇','🥈','🥉'][i]||'#'+(i+1),64,y+50);
+    x.font='700 34px "Space Grotesk", sans-serif';x.fillText(fit(x,p.name+(p.loan?' 🆘':''),520),170,y+(i<3&&pr[i]?38:50));
+    if(i<3&&pr[i]){x.font='600 22px "Space Grotesk", sans-serif';x.fillText('🎁 '+fit(x,pr[i],520),170,y+62)}
+    x.textAlign='right';x.font='400 36px Bungee, Impact, sans-serif';x.fillStyle='#111';x.fillText(String(p.net),W-190,y+50);
+    const dl=p.net-START;x.font='700 26px "Space Grotesk", sans-serif';x.fillStyle=dl>=0?'#0a7d3b':'#c4271d';x.fillText((dl>0?'+':'')+dl,W-64,y+48)});
+  x.textAlign='center';x.fillStyle='#111';x.font='600 26px "Space Grotesk", sans-serif';x.fillText(`${r.length} players · Bank ${S.bank} tokens · net = tokens − loans`,W/2,H-50);return c}
+async function drawAwards(){
+  const a=awards(),rh=124,H=230+Math.max(1,a.length)*rh+90,{c,x,W}=await canvasFor(H,'AWARDS');
+  a.forEach((it,i)=>{const y=210+i*rh;x.fillStyle=['#ffd93d','#4ecdc4','#ff6b9d','#7bd88f','#9b5de5'][i%5];rr(x,40,y,W-80,rh-14,18);x.fill();x.lineWidth=4;x.strokeStyle='#111';x.stroke();
+    x.textAlign='left';x.fillStyle='#111';x.font='56px sans-serif';x.fillText(it.icon,64,y+72);
+    x.font='400 26px Bungee, Impact, sans-serif';x.fillText(it.title.toUpperCase(),150,y+48);x.font='600 24px "Space Grotesk", sans-serif';x.fillText(fit(x,it.detail,520),150,y+84);
+    x.textAlign='right';x.font='700 38px "Space Grotesk", sans-serif';x.fillText(fit(x,it.name,380),W-64,y+66)});
+  if(!a.length){x.textAlign='center';x.fillStyle='#111';x.font='600 30px "Space Grotesk", sans-serif';x.fillText('No awards yet',W/2,260)}return c}
+window.shareImg=async kind=>{const c=await(kind==='awards'?drawAwards():drawBoard());
+  c.toBlob(async blob=>{const f=new File([blob],`party-${kind}.png`,{type:'image/png'});
+    if(navigator.canShare&&navigator.canShare({files:[f]})){try{await navigator.share({files:[f],title:'Party Bank results'});return}catch(e){if(e.name==='AbortError')return}}
+    const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=f.name;a.click();toast('Image saved — attach it in WhatsApp')},'image/png')};
+window.printSheet=()=>{const r=ranked(),pr=S.ev.prizes||[],aw=awards(),d=ecoData();
+  $('#sheet').innerHTML=`<h1>Party Bank — ${S.ev.ended?'Final results':'Standings'}</h1><div>${new Date().toLocaleString()}</div>
+  <h2>Leaderboard</h2><table><tr><th>#</th><th>Player</th><th>Tokens</th><th>Loan</th><th>Net</th><th>vs start</th></tr>${r.map((p,i)=>`<tr><td>${i+1}</td><td>${esc(p.name)}${i<3&&pr[i]?' — 🎁 '+esc(pr[i]):''}</td><td>${p.balance}</td><td>${p.loan||''}</td><td><b>${p.net}</b></td><td>${p.net-START>0?'+':''}${p.net-START}</td></tr>`).join('')}</table>
+  ${aw.length?`<h2>Awards</h2><table>${aw.map(a=>`<tr><td>${a.icon} ${a.title}</td><td>${esc(a.name)}</td><td>${esc(a.detail)}</td></tr>`).join('')}</table>`:''}
+  <h2>Economy</h2><table><tr><td>Players hold</td><td>${d.held}</td></tr><tr><td>Bank holds</td><td>${S.bank}</td></tr><tr><td>Duels played</td><td>${d.duels}</td></tr><tr><td>Bets vs Bank settled</td><td>${d.bankBets}</td></tr><tr><td>Bonuses / penalties</td><td>+${d.bonus} / ${d.penalty}</td></tr></table>`;
+  setTimeout(()=>window.print(),150)};
+
+/* ---------- celebrations ---------- */
+function confetti(box,n=70){const cols=['#ffd93d','#ff6b9d','#4ecdc4','#9b5de5','#7bd88f','#ff5a4f'];
+  for(let i=0;i<n;i++){const s=document.createElement('span');s.className='cf';
+    s.style.cssText=`left:${Math.random()*100}%;background:${cols[i%6]};animation-duration:${2.5+Math.random()*2.5}s;animation-delay:${Math.random()*.8}s`;
+    box.appendChild(s);setTimeout(()=>s.remove(),7000)}}
+function ceremony(){
+  const r=ranked().slice(0,3),pr=S.ev.prizes||[],C=$('#cer');if(!r.length)return;cerT.forEach(clearTimeout);cerT=[];
+  const meta=[{m:'🥇',c:'#ffd93d',h:230},{m:'🥈',c:'#cfd8dc',h:165},{m:'🥉',c:'#cd7f32',h:115}],cols=[1,0,2].filter(i=>r[i]);
+  C.innerHTML=`<h2 style="font-size:28px;text-align:center">🏅 MEDAL CEREMONY</h2><div style="opacity:.8;margin:6px 0 18px">${S.ev.ended?'And the winners are…':'Current top 3'}</div>
+  <div class="pod">${cols.map(i=>`<div class="step"><div class="who" id="w${i}"><div style="font-size:46px">${meta[i].m}</div><div style="font:400 22px Bungee,Impact,sans-serif;word-break:break-word">${esc(r[i].name)}</div><div>${r[i].net}🪙</div>${pr[i]?`<div style="color:#ffd93d">🎁 ${esc(pr[i])}</div>`:''}</div><div class="blk" id="b${i}" style="background:${meta[i].c}">${i+1}</div></div>`).join('')}</div>
+  <div class="row" style="margin-top:22px"><button id="cx">Close</button><button id="cr" class="c">Replay</button></div>`;
+  C.style.display='flex';
+  $('#cx').onclick=()=>{C.style.display='none';cerT.forEach(clearTimeout)};$('#cr').onclick=ceremony;
+  [2,1,0].filter(i=>r[i]).forEach((i,k)=>cerT.push(setTimeout(()=>{const b=$('#b'+i),w=$('#w'+i);if(!b)return;b.style.height=meta[i].h+'px';w.classList.add('show');if(i===0)confetti(C,90)},700+k*2200)))}
+function flash(b){
+  const es=S.entries.filter(e=>e.bet_id===b.id),st=b.stake??es[0]?.stake??0,w=b.options[b.winning];let t;
+  if(b.options.length===2&&b.mode==='bank')t=b.winning===0?`🎉 <b>${esc(w)}</b> beat the Bank! +${st}🪙`:`🏦 The Bank beat <b>${esc(b.options[0])}</b> · −${st}🪙`;
+  else if(b.options.length===2)t=`🎉 <b>${esc(w)}</b> beat ${esc(b.options[1-b.winning])}! +${st}🪙`;
+  else t=`🏁 <b>${esc(w)}</b> won: ${esc(b.title)}`;
+  const F=$('#flash');F.innerHTML=t;F.style.display='block';confetti(F,30);clearTimeout(F._t);F._t=setTimeout(()=>F.style.display='none',5000)}
+function checkSettled(){const cur=S.bets.filter(b=>b.status==='settled');
+  if(seen)cur.filter(b=>!seen.has(b.id)).forEach(flash);seen=new Set(cur.map(b=>b.id))}
 
 function render(){
   const m={};document.querySelectorAll('#app [id]').forEach(el=>{if(/INPUT|SELECT|TEXTAREA/.test(el.tagName))m[el.id]=el.type==='checkbox'?el.checked:el.value});
@@ -173,11 +314,12 @@ function render(){
     <div class="card"><div class="mut">LIVE BETS</div><div class="big">${live}</div></div></div>
     ${top10()}
     ${best?`<div class="card"><h3>Highlights</h3><div class="ln"><span>🚀 Biggest gain</span><b>${esc(best.name)} ${sg(best.net-START)}</b></div><div class="ln"><span>📉 Biggest drop</span><b>${esc(worst.name)} ${sg(worst.net-START)}</b></div></div>`:''}
-    ${activity(12)}`;
+    ${awardsCard()}${shareCard()}${activity(12)}`;
   }else if(tab==='people'){
     const q=Q.trim().toLowerCase(),list=byName().filter(p=>p.name.toLowerCase().includes(q));
     v=`${viewP&&S.players.find(p=>p.id===viewP)?pdetail(viewP):''}<div class="card"><h2>👥 Everyone (${S.players.length})</h2><div class="row"><input id="q" placeholder="Search name…" value="${esc(Q)}" oninput="Q=this.value;render()" style="width:100%"></div>
     ${list.map(p=>`<div class="lb" onclick="openP(${p.id})" style="cursor:pointer"><span>${esc(p.name)}${p.loan?` <small class="mut">🆘 owes ${p.loan}</small>`:''}</span><b style="width:auto">${p.balance}🪙</b><small>${sg(p.balance-(p.loan||0)-START)}</small></div>`).join('')||'<div class="mut" style="margin-top:8px">No players found</div>'}</div>`;
+  }else if(tab==='eco'){v=ecoView();
   }else if(tab==='bets'){
     v=S.bets.length?S.bets.map(b=>betCard(b,false)).join(''):'<div class="card">No bets yet. Hang tight! 🎲</div>';
   }else if(!staff){
@@ -193,21 +335,21 @@ function render(){
     <div class="row"><button onclick="pickAll(true)">Select all</button><button onclick="pickAll(false)">Clear</button></div>
     <div class="row"><button class="r" onclick="preset(-200,'Late arrival')">⏰ Late −200</button><button class="g" onclick="preset(100,'Early bird bonus')">🐦 Early +100</button></div>
     <div class="row"><input id="ad" type="number" placeholder="+/- tokens" style="width:120px"><input id="ar" placeholder="Reason" style="flex:1"><button class="g" onclick="adj()">Apply</button></div>
-    ${la?`<div class="row"><button onclick="undoAdj()">↩ Undo last adjustment</button><span class="mut">${la.txt}</span></div>`:''}</div>`:''}
+    <div class="row"><button onclick="undoAdj()"${la?'':' disabled'}>↩ Undo last adjustment</button><span class="mut">${la?la.txt:'Nothing to undo yet'}</span></div></div>`:''}
     <div class="card" style="background:var(--v)"><h3 style="color:#fff">⚔️ New duel</h3><div class="mut" style="color:#fff">Pick a player, an opponent (or the Bank) and a stake. Winner gets double. Max stake: ${S.ev.max_stake||'no limit'}.</div><div class="row"><select id="vg">${GAMES.map(g=>`<option>${esc(g)}</option>`).join('')}</select><input id="vs" type="number" min="1" placeholder="stake" style="width:100px"></div><div class="row"><select id="va">${po}</select><b style="color:#fff">VS</b><select id="vb"><option value="bank">🏦 Bank</option>${po}</select></div><div class="row"><input id="vt" placeholder="Title (optional)" style="width:100%"></div><div class="row"><button class="g" onclick="mkduel()">Start duel</button></div></div>
     <h2>Live bets</h2>${open.map(b=>betCard(b,true)).join('')||'<div class="card">No live bets</div>'}<h2>Finished</h2>${done.map(b=>betCard(b,true)).join('')}
     ${sup?`<div class="card" style="background:var(--y)"><h3>🏦 Bank wallet: ${S.bank}🪙</h3><div class="row"><input id="bka" type="number" min="1" placeholder="tokens" style="width:110px"><input id="bkr" placeholder="Reason (optional)" style="flex:1"></div><div class="row"><button class="g" onclick="bankAdj(1)">➕ Add to bank</button><button class="r" onclick="bankAdj(-1)">➖ Remove</button></div></div>
     <div class="card"><h3>🆘 Rescue loans</h3><div class="mut">Lend from the bank to a broke player. Counts against their ranking until repaid.</div><div class="row"><select id="lp">${po}</select><input id="la" type="number" min="1" placeholder="amount" value="200" style="width:100px"><button class="c" onclick="loan()">Give loan</button></div>
     ${S.players.filter(p=>p.loan>0).map(p=>`<div class="ln"><span>${esc(p.name)} owes <b>${p.loan}</b></span><button onclick="repay(${p.id})">Repay</button></div>`).join('')}</div>
     <div class="card"><h3>🏁 Event settings</h3><div class="row"><span>Max stake per bet</span><input id="ms" type="number" min="0" value="${S.ev.max_stake||0}" style="width:100px"><span class="mut">0 = no limit</span></div>
-    <div class="row"><input id="pz1" placeholder="🥇 1st prize" value="${esc(pz[0]||'')}" style="width:100%"><input id="pz2" placeholder="🥈 2nd prize" value="${esc(pz[1]||'')}" style="width:100%"><input id="pz3" placeholder="🥉 3rd prize" value="${esc(pz[2]||'')}" style="width:100%"></div>
-    <div class="row"><button class="g" onclick="saveEv()">Save</button>${S.ev.ended?'<button onclick="endEv(false)">Reopen event</button>':'<button class="r" onclick="endEv(true)">🏁 End event</button>'}</div></div>`:''}
+    <div class="mut" style="margin-top:10px">Prizes are optional real-world rewards (e.g. “Chocolate box”). They show under the winners’ names on the podium and in the ceremony. The winners themselves are picked automatically from the leaderboard.</div><div class="row"><input id="pz1" placeholder="🥇 1st prize (optional)" value="${esc(pz[0]||'')}" style="width:100%"><input id="pz2" placeholder="🥈 2nd prize (optional)" value="${esc(pz[1]||'')}" style="width:100%"><input id="pz3" placeholder="🥉 3rd prize (optional)" value="${esc(pz[2]||'')}" style="width:100%"></div>
+    <div class="row"><button class="g" onclick="saveEv()">Save</button>${S.ev.ended?'<button class="c" onclick="ceremony()">🏅 Replay ceremony</button>':''}${S.ev.ended?'<button onclick="endEv(false)">Reopen event</button>':'<button class="r" onclick="endEv(true)">🏁 End event</button>'}</div></div>`:''}
     <div class="card"><h3>💾 Backup</h3><div class="mut">Download a copy in case anything goes wrong mid-party.</div><div class="row"><button onclick="bkBal()">Balances CSV</button><button onclick="bkLed()">Full history CSV</button></div></div>
     ${sup?`<div class="card"><h3>Players</h3>${byName().map(p=>`<div class="ln"><span>${esc(p.name)} <small class="mut">${p.balance}🪙</small></span><button class="r" style="padding:2px 8px" onclick="rmp(${p.id})">✕</button></div>`).join('')}</div>
     <div class="card" style="background:var(--r)"><h3>🧹 Start clean</h3><div class="mut" style="color:#111">Wipe test data before the real event.</div><div class="row"><button onclick="resetEv(true)">Reset tokens &amp; bets (keep players)</button><button onclick="resetEv(false)">Delete everything</button></div></div>`:''}`;
   }
-  const tabs=[['home','🏠 Home'],['people','👥 People'],['bets','🎲 Bets'],['host',staff?'🎮 Host':'🔑 Host']];
-  $('#app').innerHTML=`<div class="top"><h1>PARTY BANK</h1><div class="row" style="margin:0">${staff?`<span class="badge ${role}">${sup?'👑 Super':'🤝 Co-host'}</span>`:''}<span class="coin">🏦 ${S.bank}🪙</span></div></div><div class="wrap">${v}</div><nav>${tabs.map(t=>`<button class="${tab===t[0]?'on':''}" onclick="tab='${t[0]}';render()">${t[1]}</button>`).join('')}</nav>`;
+  const tabs=[['home','🏠','Home'],['people','👥','People'],['eco','💱','Economy'],['bets','🎲','Bets'],['host',staff?'🎮':'🔑','Host']];
+  $('#app').innerHTML=`<div class="top"><h1>PARTY BANK</h1><div class="row" style="margin:0">${staff?`<span class="badge ${role}">${sup?'👑 Super':'🤝 Co-host'}</span>`:''}<span class="coin">🏦 ${S.bank}🪙</span></div></div><div class="wrap">${v}</div><nav>${tabs.map(t=>`<button class="${tab===t[0]?'on':''}" onclick="tab='${t[0]}';render()"><span>${t[1]}</span>${t[2]}</button>`).join('')}</nav>`;
   for(const id in m){const el=document.getElementById(id);if(el){if(el.type==='checkbox')el.checked=m[id];else el.value=m[id]}}
   if(fid){const el=document.getElementById(fid);if(el){el.focus();try{el.setSelectionRange(ss,ss)}catch(e){}}}
 }
