@@ -21,6 +21,8 @@ input[type=checkbox]{width:18px;height:18px;min-width:0;padding:0;accent-color:v
 button{cursor:pointer;background:var(--y);box-shadow:3px 3px 0 var(--ink);font-weight:700}
 button:active{transform:translate(3px,3px);box-shadow:none}
 button.g{background:var(--g)}button.r{background:var(--r)}button.x{padding:2px 8px;background:var(--r);box-shadow:2px 2px 0 var(--ink)}button.c{background:var(--c)}
+button:disabled{opacity:.4;cursor:not-allowed}
+#modal{position:fixed;inset:0;background:#0007;display:none;align-items:center;justify-content:center;z-index:20;padding:20px}#modal .card{max-width:380px;width:100%;margin:0;background:var(--y)}#mm{font-size:18px;line-height:1.35}#modal input{width:100%;margin-top:12px}
 textarea{width:100%;min-height:80px}input{min-width:0}
 .row{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-top:8px}
 .chip{border:2px solid var(--ink);border-radius:999px;padding:2px 10px;background:var(--c);font-size:14px;display:inline-flex;align-items:center;gap:6px}
@@ -35,7 +37,7 @@ nav button{flex:1;max-width:130px;padding:8px 4px;font-size:14px}nav button.on{b
 #toast.err{background:var(--r)}
 .lb{display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:2px dashed #0003}.lb b{font:400 20px Bungee;width:44px}.lb span{flex:1}
 </style></head>
-<body><div id="app"></div><div id="toast"></div>
+<body><div id="app"></div><div id="toast"></div><div id="modal"><div class="card"><div id="mm"></div><input id="mi" autocomplete="off"><div class="row" style="justify-content:flex-end"><button id="mn">Cancel</button><button id="my" class="g">Confirm</button></div></div></div>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
 <script>
 const SUPABASE_URL='https://eudtnaprxmjbhrkhupbg.supabase.co', SUPABASE_KEY='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImV1ZHRuYXByeG1qYmhya2h1cGJnIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTQ1Nzc5ODcsImV4cCI6MjExMDE1Mzk4N30.iv8E6kXyKNiIVvKSQuR1i6jTdRO4cc_QzvyV92FtebA';
@@ -51,6 +53,14 @@ const sg=n=>`<span class="${n>=0?'pos':'neg'}">${n>0?'+':''}${n}</span>`;
 const byBal=()=>[...S.players].sort((a,b)=>b.balance-a.balance||a.name.localeCompare(b.name));
 const byName=()=>[...S.players].sort((a,b)=>a.name.localeCompare(b.name));
 
+function ask(msg,o={}){return new Promise(res=>{
+  const M=$('#modal'),inp=$('#mi'),ok=$('#my');$('#mm').innerHTML=msg;
+  inp.style.display=o.type?'block':'none';inp.value='';inp.placeholder=o.type?'Type '+o.type+' to confirm':'';
+  ok.textContent=o.ok||'Confirm';ok.className=o.cls||'g';ok.disabled=!!o.type;
+  inp.oninput=()=>{ok.disabled=inp.value.trim().toUpperCase()!==o.type};
+  const done=v=>{M.style.display='none';res(v)};
+  ok.onclick=()=>done(true);$('#mn').onclick=()=>done(false);M.onclick=e=>{if(e.target===M)done(false)};
+  M.style.display='flex';if(o.type)inp.focus()})}
 function toast(m,err){const t=$('#toast');t.textContent=m;t.className=err?'err':'';t.style.display='block';clearTimeout(t._t);t._t=setTimeout(()=>t.style.display='none',2600)}
 async function rpc(fn,args={}){const {error}=await sb.rpc(fn,{p_code:code,...args});if(error){toast(error.message,1);return false}toast('Done ✔');await load();return true}
 
@@ -73,47 +83,40 @@ window.unlock=async()=>{const c=$('#sc').value;const {data,error}=await sb.rpc('
 window.lock=()=>{code=null;role=null;localStorage.removeItem('pb_code');tab='home';render()};
 window.addp=async()=>{const names=$('#np').value.split('\n').map(x=>x.trim()).filter(Boolean);
   if(!names.length)return toast('Type at least one name',1);if(await rpc('add_players',{p_names:names}))$('#np').value=''};
-window.rmp=(id,n)=>{if(confirm('Remove '+n+'?'))rpc('remove_player',{p_id:id})};
+window.rmp=async id=>{if(await ask('Remove <b>'+esc(nm(id))+'</b> from the party?',{ok:'Remove',cls:'r'}))rpc('remove_player',{p_id:id})};
 const picked=()=>[...document.querySelectorAll('input[id^=pk]:checked')].map(x=>+x.id.slice(2));
 window.pickAll=v=>document.querySelectorAll('input[id^=pk]').forEach(x=>x.checked=v);
 window.preset=(d,r)=>{$('#ad').value=d;$('#ar').value=r};
-window.adj=()=>{const ids=picked(),d=parseInt($('#ad').value);
+window.adj=async()=>{const ids=picked(),d=parseInt($('#ad').value);
   if(!ids.length)return toast('Tick at least one player',1);if(!d)return toast('Enter an amount',1);
-  if(confirm(`${d>0?'Give':'Deduct'} ${Math.abs(d)} tokens ${d>0?'to':'from'} ${ids.length} player(s)?`))
-    rpc('adjust',{p_players:ids,p_delta:d,p_reason:$('#ar').value.trim()}).then(ok=>{if(ok)pickAll(false)})};
-window.mk=async()=>{
-  const opts=$('#bo').value.split('\n').map(x=>x.trim()).filter(Boolean),title=$('#bt').value.trim();
-  if(!title||opts.length<2)return toast('Need a title and 2+ options',1);
-  if(await rpc('create_bet',{p_game:$('#bg').value,p_title:title,p_options:opts})){$('#bt').value='';$('#bo').value=''}};
-window.fillPl=()=>{$('#bo').value=byName().map(p=>p.name).join('\n')};
-window.mkpvp=async()=>{const t=$('#vt').value.trim(),s=parseInt($('#vs').value);
-  if(!t)return toast('Add a title',1);if(!(s>0))return toast('Enter a stake',1);
-  if(await rpc('create_pvp',{p_game:$('#vg').value,p_title:t,p_a:+$('#va').value,p_b:+$('#vb').value,p_stake:s}))$('#vt').value=''};
-window.place=id=>{const s=parseInt($('#st'+id).value);if(!(s>0))return toast('Enter a stake',1);
-  rpc('place_entry',{p_bet:id,p_player:+$('#pl'+id).value,p_opt:+$('#op'+id).value,p_stake:s}).then(ok=>{if(ok)$('#st'+id).value=''})};
-window.settle=id=>{const w=$('#w'+id);if(confirm('Settle: "'+w.options[w.selectedIndex].text+'" wins?'))rpc('settle_bet',{p_bet:id,p_win:+w.value})};
-window.voidB=id=>{if(confirm('Void bet and refund everyone?'))rpc('void_bet',{p_bet:id})};
+  if(await ask(`${d>0?'Give':'Deduct'} <b>${Math.abs(d)}</b> tokens ${d>0?'to':'from'} <b>${ids.length}</b> player(s)?`,{ok:d>0?'Give':'Deduct',cls:d>0?'g':'r'}))
+    if(await rpc('adjust',{p_players:ids,p_delta:d,p_reason:$('#ar').value.trim()}))pickAll(false)};
+window.mkduel=async()=>{const s=parseInt($('#vs').value),a=+$('#va').value,b=$('#vb').value;
+  if(!(s>0))return toast('Enter a stake',1);
+  const vsBank=b==='bank',t=$('#vt').value.trim()||(nm(a)+' vs '+(vsBank?'Bank':nm(+b)));
+  const ok=vsBank?await rpc('create_bank_bet',{p_game:$('#vg').value,p_title:t,p_player:a,p_stake:s})
+    :await rpc('create_pvp',{p_game:$('#vg').value,p_title:t,p_a:a,p_b:+b,p_stake:s});
+  if(ok)$('#vt').value=''};
+window.settle=async(id,i)=>{const b=S.bets.find(x=>x.id===id);
+  if(await ask('<b>'+esc(b.options[i])+'</b> wins?<div class="mut">Tokens are paid out right away.</div>',{ok:'Yes, settle',cls:'g'}))rpc('settle_bet',{p_bet:id,p_win:i})};
+window.voidB=async id=>{if(await ask('Void this bet and refund everyone?',{ok:'Void & refund',cls:'r'}))rpc('void_bet',{p_bet:id})};
+window.undoB=async id=>{if(await ask('Undo the result? Payouts will be reversed.',{ok:'Undo result',cls:'r'}))rpc('reopen_bet',{p_bet:id})};
+window.resetEv=async keep=>{
+  if(await ask(keep?'Reset <b>all tokens, bets and history</b>?<div class="mut">Players stay and go back to the starting tokens.</div>':'Delete <b>everything</b> — players, tokens, bets and history?<div class="mut">You will add players again from scratch.</div>',{ok:keep?'Reset event':'Delete everything',cls:'r',type:'RESET'}))
+    rpc('reset_event',{p_keep_players:keep})};
 
 /* ---------- views ---------- */
 function ctl(b){
   if(b.status==='void')return'';
-  if(b.status==='settled')return role==='super'?`<div class="row"><button onclick="rpc('reopen_bet',{p_bet:${b.id}})">↩ Undo result</button></div>`:'';
-  const oo=b.options.map((o,i)=>`<option value="${i}">${esc(o)}</option>`).join('');
-  let h='';
-  if(b.mode==='bank'&&b.status==='open'){
-    const pl=byName().map(p=>`<option value="${p.id}">${esc(p.name)} (${p.balance})</option>`).join('');
-    h+=`<div class="row"><select id="pl${b.id}">${pl}</select><select id="op${b.id}">${oo}</select><input id="st${b.id}" type="number" min="1" placeholder="stake" style="width:90px"><button class="c" onclick="place(${b.id})">Place bet</button></div>`;
-  }
-  h+=`<div class="row">${b.mode==='bank'?`<button onclick="rpc('set_status',{p_bet:${b.id},p_status:'${b.status==='open'?'locked':'open'}'})">${b.status==='open'?'🔒 Lock':'🔓 Reopen betting'}</button>`:''}<select id="w${b.id}">${oo}</select><button class="g" onclick="settle(${b.id})">🏁 Winner</button><button class="r" onclick="voidB(${b.id})">Void</button></div>`;
-  return h;
+  if(b.status==='settled')return role==='super'?`<div class="row"><button onclick="undoB(${b.id})">↩ Undo result</button></div>`:'';
+  return`<div class="row">${b.options.map((o,i)=>`<button class="g" onclick="settle(${b.id},${i})">👑 ${esc(o)} wins</button>`).join('')}<button class="r" onclick="voidB(${b.id})">Void</button></div>`;
 }
 function betCard(b,host){
-  const es=S.entries.filter(e=>e.bet_id===b.id),tot=es.reduce((a,e)=>a+e.stake,0);
-  const chips=b.options.map((o,i)=>{const t=es.filter(e=>e.opt===i).reduce((a,e)=>a+e.stake,0);
-    return`<span class="chip${b.winning===i?' win':''}">${b.winning===i?'👑 ':''}${esc(o)}${b.mode==='bank'?' · '+t+'🪙':''}</span>`}).join(b.mode==='pvp'?'<b>⚔️</b>':'');
-  const list=es.map(e=>`<div class="ln"><span>${esc(nm(e.player_id))} → ${esc(b.options[e.opt])} · ${e.stake}🪙${e.payout!=null?` ⇒ <b>${e.payout}</b>`:''}</span>${host&&b.mode==='bank'&&b.status==='open'?`<button class="x" onclick="rpc('cancel_entry',{p_entry:${e.id}})">✕</button>`:''}</div>`).join('')||'<div class="mut">No bets yet</div>';
-  const sub=b.mode==='bank'?`🏦 vs Bank · win = double · pot ${tot}🪙`:`⚔️ Duel · ${b.stake}🪙 each · winner takes ${b.stake*2}🪙`;
-  return`<div class="card"><div class="row" style="justify-content:space-between;margin:0"><h3>${esc(b.game)}</h3><span class="badge ${b.status}">${b.status}</span></div><div style="margin-top:4px">${esc(b.title)}</div><div class="mut">${sub}</div><div class="row">${chips}</div><div style="margin-top:8px">${list}</div>${host?ctl(b):''}</div>`;
+  const es=S.entries.filter(e=>e.bet_id===b.id),st=b.stake??es[0]?.stake??0;
+  const chips=b.options.map((o,i)=>`<span class="chip${b.winning===i?' win':''}">${b.winning===i?'👑 ':''}${esc(o)}</span>`).join('<b>⚔️</b>');
+  const sub=b.mode==='bank'?`🏦 vs Bank · ${st}🪙 stake · win = ${st*2}🪙`:`⚔️ Duel · ${st}🪙 each · winner takes ${st*2}🪙`;
+  const list=b.status==='settled'?es.map(e=>`<div class="ln"><span>${esc(nm(e.player_id))} · ${e.stake}🪙 ⇒ <b>${e.payout??0}</b></span></div>`).join(''):'';
+  return`<div class="card"><div class="row" style="justify-content:space-between;margin:0"><h3>${esc(b.game)}</h3><span class="badge ${b.status}">${b.status}</span></div><div style="margin-top:4px">${esc(b.title)}</div><div class="mut">${sub}</div><div class="row">${chips}</div>${list?`<div style="margin-top:8px">${list}</div>`:''}${host?ctl(b):''}</div>`;
 }
 
 function render(){
@@ -146,10 +149,10 @@ function render(){
     <div class="row"><button onclick="pickAll(true)">Select all</button><button onclick="pickAll(false)">Clear</button></div>
     <div class="row"><button class="r" onclick="preset(-50,'Late arrival')">⏰ Late −50</button><button class="g" onclick="preset(50,'Early bird bonus')">🐦 Early +50</button></div>
     <div class="row"><input id="ad" type="number" placeholder="+/- tokens" style="width:120px"><input id="ar" placeholder="Reason" style="flex:1"><button class="g" onclick="adj()">Apply</button></div></div>`:''}
-    <div class="card" style="background:var(--p)"><h3>🏦 New bet vs Bank (win = ×2)</h3><div class="row"><select id="bg">${GAMES.map(g=>`<option>${esc(g)}</option>`).join('')}</select></div><div class="row"><input id="bt" placeholder="Who wins round 1?" style="width:100%"></div><div class="row"><textarea id="bo" placeholder="One option per line.&#10;Ravi&#10;Anita"></textarea></div><div class="row"><button onclick="fillPl()">👥 Use all players</button><button class="g" onclick="mk()">Create bet</button></div></div>
-    <div class="card" style="background:var(--v)"><h3 style="color:#fff">⚔️ New duel (player vs player)</h3><div class="row"><select id="vg">${GAMES.map(g=>`<option>${esc(g)}</option>`).join('')}</select><input id="vs" type="number" min="1" placeholder="stake each" style="width:110px"></div><div class="row"><select id="va">${po}</select><b style="color:#fff">VS</b><select id="vb">${po}</select></div><div class="row"><input id="vt" placeholder="Duel title" style="width:100%"></div><div class="row"><button class="g" onclick="mkpvp()">Start duel</button></div></div>
+    <div class="card" style="background:var(--v)"><h3 style="color:#fff">⚔️ New duel</h3><div class="mut" style="color:#fff">Pick a player, an opponent (or the Bank) and a stake. Winner gets double.</div><div class="row"><select id="vg">${GAMES.map(g=>`<option>${esc(g)}</option>`).join('')}</select><input id="vs" type="number" min="1" placeholder="stake" style="width:100px"></div><div class="row"><select id="va">${po}</select><b style="color:#fff">VS</b><select id="vb"><option value="bank">🏦 Bank</option>${po}</select></div><div class="row"><input id="vt" placeholder="Title (optional)" style="width:100%"></div><div class="row"><button class="g" onclick="mkduel()">Start duel</button></div></div>
     <h2>Live bets</h2>${open.map(b=>betCard(b,true)).join('')||'<div class="card">No live bets</div>'}<h2>Finished</h2>${done.map(b=>betCard(b,true)).join('')}
-    ${sup?`<div class="card"><h3>Players</h3>${byName().map(p=>`<div class="ln"><span>${esc(p.name)} <small class="mut">${p.balance}🪙</small></span><button class="x" onclick="rmp(${p.id},'${esc(p.name).replace(/'/g,'')}')">✕</button></div>`).join('')}</div>`:''}`;
+    ${sup?`<div class="card"><h3>Players</h3>${byName().map(p=>`<div class="ln"><span>${esc(p.name)} <small class="mut">${p.balance}🪙</small></span><button class="x" onclick="rmp(${p.id})">✕</button></div>`).join('')}</div>
+    <div class="card" style="background:var(--r)"><h3>🧹 Start clean</h3><div class="mut" style="color:#111">Wipe test data before the real event.</div><div class="row"><button onclick="resetEv(true)">Reset tokens &amp; bets (keep players)</button><button onclick="resetEv(false)">Delete everything</button></div></div>`:''}`;
   }
   const tabs=[['home','🏠 Home'],['people','👥 People'],['bets','🎲 Bets'],['host',staff?'🎮 Host':'🔑 Host']];
   $('#app').innerHTML=`<div class="top"><h1>PARTY BANK</h1><span class="coin">🏦 ${S.bank}🪙</span></div><div class="wrap">${v}</div><nav>${tabs.map(t=>`<button class="${tab===t[0]?'on':''}" onclick="tab='${t[0]}';render()">${t[1]}</button>`).join('')}</nav>`;
