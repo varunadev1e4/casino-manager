@@ -11,7 +11,7 @@ drop function if exists need(text), is_staff(), join_party(text), claim_super(te
   adjust(uuid,int,text), create_bet(text,text,text,jsonb), set_status(bigint,text),
   place_entry(bigint,uuid,int,int), cancel_entry(bigint), settle_bet(bigint,int),
   void_bet(bigint), reopen_bet(bigint);
-drop function if exists place_entry(text,bigint,bigint,int,int), cancel_entry(text,bigint), set_status(text,bigint,text), create_bet(text,text,text,jsonb);
+drop function if exists rescue_loan(text,bigint,int), place_entry(text,bigint,bigint,int,int), cancel_entry(text,bigint), set_status(text,bigint,text), create_bet(text,text,text,jsonb);
 
 create table settings(key text primary key, value text not null);
 insert into settings values
@@ -21,7 +21,7 @@ insert into settings values
 
 create sequence adj_seq;
 create table players(id bigserial primary key, name text not null,
-  balance int not null default 0, loan int not null default 0, created_at timestamptz default now());
+  balance int not null default 0, loan int not null default 0, loan_taken boolean not null default false, created_at timestamptz default now());
 create unique index players_name on players(lower(name));
 create table bank(id int primary key default 1 check(id=1), balance int not null);
 insert into bank values(1,10000);
@@ -235,16 +235,18 @@ begin perform need(p_code,'helper');
 end $$;
 
 -- Rescue loan from the bank to a broke player. Loans count against them in the ranking (net = tokens - loan).
-create or replace function rescue_loan(p_code text, p_player bigint, p_amount int) returns void language plpgsql security definer set search_path=public as $$
-declare n text;
+-- One-time rescue loan: exactly 100 tokens from the bank, only for players under 50 tokens, once per player.
+create or replace function rescue_loan(p_code text, p_player bigint) returns void language plpgsql security definer set search_path=public as $$
+declare n text; bal int; used boolean; amt constant int:=100;
 begin perform need(p_code,'helper');
-  if coalesce(p_amount,0)<=0 then raise exception 'Enter an amount'; end if;
-  if (select balance from bank where id=1)<p_amount then raise exception 'Bank cannot cover this loan'; end if;
-  select name into n from players where id=p_player for update;
+  select name,balance,loan_taken into n,bal,used from players where id=p_player for update;
   if n is null then raise exception 'Player not found'; end if;
-  update players set balance=balance+p_amount, loan=loan+p_amount where id=p_player;
-  insert into ledger(player_id,delta,reason) values(p_player,p_amount,'Rescue loan');
-  perform bank_move(-p_amount,'Rescue loan to '||n);
+  if used then raise exception '% already used their one-time loan',n; end if;
+  if bal>=50 then raise exception '% is not broke (loans are for players under 50 tokens)',n; end if;
+  if (select balance from bank where id=1)<amt then raise exception 'Bank cannot cover this loan'; end if;
+  update players set balance=balance+amt, loan=loan+amt, loan_taken=true where id=p_player;
+  insert into ledger(player_id,delta,reason) values(p_player,amt,'Rescue loan');
+  perform bank_move(-amt,'Rescue loan to '||n);
 end $$;
 
 create or replace function repay_loan(p_code text, p_player bigint) returns void language plpgsql security definer set search_path=public as $$
@@ -285,7 +287,7 @@ begin perform need(p_code,'super');
   update bank set balance=10000 where id=1;
   update event set ended=false, final=null where id=1;
   if p_keep_players then
-    update players set balance=t, loan=0 where true;
+    update players set balance=t, loan=0, loan_taken=false where true;
     insert into ledger(player_id,delta,reason) select id,t,'Welcome tokens' from players;
   else
     delete from players where true;
