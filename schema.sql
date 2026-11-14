@@ -5,9 +5,6 @@
 -- !!! CHANGE BOTH CODES BELOW BEFORE RUNNING (use long ones) !!!
 -- (this resets everything: players, bets, ledger)
 
-
-
-
 drop table if exists ledger, entries, bets, bank, players, profiles, settings, event cascade;
 drop sequence if exists adj_seq;
 drop function if exists need(text), is_staff(), join_party(text), claim_super(text), set_role(uuid,text),
@@ -18,8 +15,8 @@ drop function if exists place_entry(text,bigint,bigint,int,int), cancel_entry(te
 
 create table settings(key text primary key, value text not null);
 insert into settings values
-  ('super_code','Varun13#'),     -- you: everything
-  ('helper_code','cohost13#'),   -- co-host: add players, start/settle/void duels only
+  ('super_code','CHANGE-ME-SUPER'),     -- you: everything
+  ('helper_code','CHANGE-ME-COHOST'),   -- co-host: everything except event settings and start clean (reset/delete)
   ('start_tokens','1000');
 
 create sequence adj_seq;
@@ -97,9 +94,10 @@ begin perform need(p_code,'helper');
   end loop;
 end $$;
 
--- Super only from here on: remove player, adjust tokens, bank wallet, undo, loans, event, reset.
+-- Co-host or super: remove player, adjust tokens, bank wallet, undo, loans, undo result.
+-- Super only: set_event, end_event, reset_event (event settings + start clean).
 create or replace function remove_player(p_code text, p_id bigint) returns void language plpgsql security definer set search_path=public as $$
-begin perform need(p_code,'super');
+begin perform need(p_code,'helper');
   if exists(select 1 from entries where player_id=p_id) then raise exception 'Player has bets - void them first'; end if;
   delete from ledger where player_id=p_id;
   delete from players where id=p_id;
@@ -107,7 +105,7 @@ end $$;
 
 create or replace function adjust(p_code text, p_players bigint[], p_delta int, p_reason text) returns void language plpgsql security definer set search_path=public as $$
 declare x bigint; old int; d int; bt bigint:=nextval('adj_seq'); r text:=coalesce(nullif(trim(p_reason),''),'Host adjustment');
-begin perform need(p_code,'super');
+begin perform need(p_code,'helper');
   if coalesce(p_delta,0)=0 then raise exception 'Enter an amount'; end if;
   foreach x in array p_players loop
     select balance into old from players where id=x for update;
@@ -120,7 +118,7 @@ begin perform need(p_code,'super');
 end $$;
 
 create or replace function bank_adjust(p_code text, p_delta int, p_reason text) returns void language plpgsql security definer set search_path=public as $$
-begin perform need(p_code,'super');
+begin perform need(p_code,'helper');
   if coalesce(p_delta,0)=0 then raise exception 'Enter an amount'; end if;
   if (select balance from bank where id=1)+p_delta<0 then raise exception 'Bank cannot go below 0'; end if;
   perform bank_move(p_delta,coalesce(nullif(trim(p_reason),''),'Bank top-up'),null,nextval('adj_seq'));
@@ -129,7 +127,7 @@ end $$;
 -- Reverses the most recent adjustment batch (players and/or bank).
 create or replace function undo_adjust(p_code text) returns void language plpgsql security definer set search_path=public as $$
 declare bt bigint; r ledger%rowtype; cur int; d int;
-begin perform need(p_code,'super');
+begin perform need(p_code,'helper');
   select max(adj_batch) into bt from ledger where adj_batch is not null and not undone;
   if bt is null then raise exception 'Nothing to undo'; end if;
   for r in select * from ledger where adj_batch=bt loop
@@ -221,7 +219,7 @@ end $$;
 
 create or replace function reopen_bet(p_code text, p_bet bigint) returns void language plpgsql security definer set search_path=public as $$
 declare b bets%rowtype; e entries%rowtype; tp int:=0;
-begin perform need(p_code,'super');
+begin perform need(p_code,'helper');
   select * into b from bets where id=p_bet for update;
   if b.status<>'settled' then raise exception 'Not settled'; end if;
   for e in select * from entries where bet_id=p_bet loop
@@ -239,7 +237,7 @@ end $$;
 -- Rescue loan from the bank to a broke player. Loans count against them in the ranking (net = tokens - loan).
 create or replace function rescue_loan(p_code text, p_player bigint, p_amount int) returns void language plpgsql security definer set search_path=public as $$
 declare n text;
-begin perform need(p_code,'super');
+begin perform need(p_code,'helper');
   if coalesce(p_amount,0)<=0 then raise exception 'Enter an amount'; end if;
   if (select balance from bank where id=1)<p_amount then raise exception 'Bank cannot cover this loan'; end if;
   select name into n from players where id=p_player for update;
@@ -251,7 +249,7 @@ end $$;
 
 create or replace function repay_loan(p_code text, p_player bigint) returns void language plpgsql security definer set search_path=public as $$
 declare n text; bal int; ln int; r int;
-begin perform need(p_code,'super');
+begin perform need(p_code,'helper');
   select name,balance,loan into n,bal,ln from players where id=p_player for update;
   if n is null then raise exception 'Player not found'; end if;
   r:=least(bal,ln);
