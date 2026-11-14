@@ -20,24 +20,27 @@ button,input,select,textarea{font:inherit;border:3px solid var(--ink);border-rad
 input[type=checkbox]{width:18px;height:18px;min-width:0;padding:0;accent-color:var(--v)}
 button{cursor:pointer;background:var(--y);box-shadow:3px 3px 0 var(--ink);font-weight:700}
 button:active{transform:translate(3px,3px);box-shadow:none}
-button.g{background:var(--g)}button.r{background:var(--r)}button.x{padding:2px 8px;background:var(--r);box-shadow:2px 2px 0 var(--ink)}button.c{background:var(--c)}
 button:disabled{opacity:.4;cursor:not-allowed}
-#modal{position:fixed;inset:0;background:#0007;display:none;align-items:center;justify-content:center;z-index:20;padding:20px}#modal .card{max-width:380px;width:100%;margin:0;background:var(--y)}#mm{font-size:18px;line-height:1.35}#modal input{width:100%;margin-top:12px}
+button.g{background:var(--g)}button.r{background:var(--r)}button.c{background:var(--c)}
 textarea{width:100%;min-height:80px}input{min-width:0}
 .row{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-top:8px}
 .chip{border:2px solid var(--ink);border-radius:999px;padding:2px 10px;background:var(--c);font-size:14px;display:inline-flex;align-items:center;gap:6px}
 .chip.win{background:var(--y);box-shadow:2px 2px 0 var(--ink)}
-.badge{border:2px solid var(--ink);border-radius:8px;padding:1px 8px;font-size:13px;text-transform:uppercase;background:var(--g)}
+.badge{border:2px solid var(--ink);border-radius:8px;padding:1px 8px;font-size:13px;text-transform:uppercase;background:var(--g);white-space:nowrap}
 .badge.locked{background:var(--y)}.badge.settled{background:var(--c)}.badge.void{background:#ccc}.badge.super{background:var(--v);color:#fff}.badge.helper{background:var(--p)}
 .ln{display:flex;justify-content:space-between;gap:8px;align-items:center;padding:6px 0;border-bottom:2px dashed #0003;font-size:15px}
 .mut{opacity:.6;font-size:14px}.pos{color:#0a7d3b}.neg{color:#c4271d}
 nav{position:fixed;bottom:0;left:0;right:0;display:flex;gap:6px;justify-content:center;padding:10px;background:var(--v);border-top:4px solid var(--ink)}
 nav button{flex:1;max-width:130px;padding:8px 4px;font-size:14px}nav button.on{background:var(--p)}
-#toast{position:fixed;top:70px;left:50%;transform:translateX(-50%);z-index:9;background:var(--g);border:3px solid var(--ink);border-radius:12px;box-shadow:4px 4px 0 var(--ink);padding:8px 16px;display:none}
+#toast{position:fixed;top:70px;left:50%;transform:translateX(-50%);z-index:30;background:var(--g);border:3px solid var(--ink);border-radius:12px;box-shadow:4px 4px 0 var(--ink);padding:8px 16px;display:none;max-width:90vw}
 #toast.err{background:var(--r)}
+#modal{position:fixed;inset:0;background:#0007;display:none;align-items:center;justify-content:center;z-index:20;padding:20px}
+#modal .card{max-width:380px;width:100%;margin:0;background:var(--y)}#mm{font-size:18px;line-height:1.35}#modal input{width:100%;margin-top:12px}
 .lb{display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:2px dashed #0003}.lb b{font:400 20px Bungee;width:44px}.lb span{flex:1}
+.tv .lb{font-size:26px;padding:12px 0}.tv .lb b{font-size:28px;width:70px}.tv h2{font-size:34px}.tv .ln{font-size:20px}
 </style></head>
-<body><div id="app"></div><div id="toast"></div><div id="modal"><div class="card"><div id="mm"></div><input id="mi" autocomplete="off"><div class="row" style="justify-content:flex-end"><button id="mn">Cancel</button><button id="my" class="g">Confirm</button></div></div></div>
+<body><div id="app"></div><div id="toast"></div>
+<div id="modal"><div class="card"><div id="mm"></div><input id="mi" autocomplete="off"><div class="row" style="justify-content:flex-end"><button id="mn">Cancel</button><button id="my" class="g">Confirm</button></div></div></div>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
 <script>
 const SUPABASE_URL='https://eudtnaprxmjbhrkhupbg.supabase.co', SUPABASE_KEY='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImV1ZHRuYXByeG1qYmhya2h1cGJnIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTQ1Nzc5ODcsImV4cCI6MjExMDE1Mzk4N30.iv8E6kXyKNiIVvKSQuR1i6jTdRO4cc_QzvyV92FtebA';
@@ -45,13 +48,13 @@ const sb=supabase.createClient(SUPABASE_URL,SUPABASE_KEY,{auth:{persistSession:f
 const $=s=>document.querySelector(s);
 const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const GAMES=['Flip 7','Exploding Kittens','Blackjack','Least Count','Mafia','Trivia Quiz',"Don't Say Same Thing",'Whole Party','Other'];
-const START=1000;
-let S={players:[],bank:0,bets:[],entries:[],ledger:[]},tab='home',timer,code=null,role=null;
+const START=1000, TV=new URLSearchParams(location.search).has('tv');
+let S={players:[],bank:0,bets:[],entries:[],ledger:[],ev:{ended:false,prizes:[],final:null,max_stake:500}},tab='home',timer,code=null,role=null,viewP=null,Q='';
 const nm=id=>id?(S.players.find(p=>p.id===id)?.name||'?'):'🏦 Bank';
 const tm=t=>new Date(t).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'});
 const sg=n=>`<span class="${n>=0?'pos':'neg'}">${n>0?'+':''}${n}</span>`;
-const byBal=()=>[...S.players].sort((a,b)=>b.balance-a.balance||a.name.localeCompare(b.name));
 const byName=()=>[...S.players].sort((a,b)=>a.name.localeCompare(b.name));
+const ranked=()=>S.ev.ended&&S.ev.final?S.ev.final:S.players.map(p=>({id:p.id,name:p.name,balance:p.balance,loan:p.loan||0,net:p.balance-(p.loan||0)})).sort((a,b)=>b.net-a.net||a.name.localeCompare(b.name));
 
 function ask(msg,o={}){return new Promise(res=>{
   const M=$('#modal'),inp=$('#mi'),ok=$('#my');$('#mm').innerHTML=msg;
@@ -61,26 +64,30 @@ function ask(msg,o={}){return new Promise(res=>{
   const done=v=>{M.style.display='none';res(v)};
   ok.onclick=()=>done(true);$('#mn').onclick=()=>done(false);M.onclick=e=>{if(e.target===M)done(false)};
   M.style.display='flex';if(o.type)inp.focus()})}
-function toast(m,err){const t=$('#toast');t.textContent=m;t.className=err?'err':'';t.style.display='block';clearTimeout(t._t);t._t=setTimeout(()=>t.style.display='none',2600)}
-async function rpc(fn,args={}){const {error}=await sb.rpc(fn,{p_code:code,...args});if(error){toast(error.message,1);return false}toast('Done ✔');await load();return true}
+function toast(m,err){const t=$('#toast');t.textContent=m;t.className=err?'err':'';t.style.display='block';clearTimeout(t._t);t._t=setTimeout(()=>t.style.display='none',2800)}
+async function rpc(fn,args={}){const {error}=await sb.rpc(fn,{p_code:code,...args});
+  if(error){if(/Wrong code/.test(error.message)){lock();toast('Code no longer valid — unlock again',1)}else toast(error.message,1);return false}
+  toast('Done ✔');await load();return true}
 
 async function init(){
   const saved=localStorage.getItem('pb_code');
-  if(saved){const {data}=await sb.rpc('check_code',{p_code:saved});if(data){code=saved;role=data}else localStorage.removeItem('pb_code')}
+  if(saved&&!TV){const {data}=await sb.rpc('check_code',{p_code:saved});if(data){code=saved;role=data}else localStorage.removeItem('pb_code')}
   await load();
   sb.channel('party').on('postgres_changes',{event:'*',schema:'public'},()=>{clearTimeout(timer);timer=setTimeout(load,300)}).subscribe();
 }
 async function load(){
-  const [p,b,bt,e,l]=await Promise.all([sb.from('players').select('*'),sb.from('bank').select('balance').single(),
+  const [p,b,bt,e,l,ev]=await Promise.all([sb.from('players').select('*'),sb.from('bank').select('balance').single(),
     sb.from('bets').select('*').order('id',{ascending:false}),sb.from('entries').select('*'),
-    sb.from('ledger').select('*').order('id',{ascending:false}).limit(300)]);
-  S.players=p.data||[];S.bank=b.data?.balance??0;S.bets=bt.data||[];S.entries=e.data||[];S.ledger=l.data||[];render();
+    sb.from('ledger').select('*').order('id',{ascending:false}).limit(1000),sb.from('event').select('*').single()]);
+  S.players=p.data||[];S.bank=b.data?.balance??0;S.bets=bt.data||[];S.entries=e.data||[];S.ledger=l.data||[];
+  if(ev.data)S.ev=ev.data;render();
 }
 
-/* ---------- host actions ---------- */
+/* ---------- actions ---------- */
 window.unlock=async()=>{const c=$('#sc').value;const {data,error}=await sb.rpc('check_code',{p_code:c});
   if(error)return toast('Wrong code',1);code=c;role=data;localStorage.setItem('pb_code',c);toast('Unlocked ✔');render()};
-window.lock=()=>{code=null;role=null;localStorage.removeItem('pb_code');tab='home';render()};
+window.lock=()=>{code=null;role=null;localStorage.removeItem('pb_code');if(tab==='host')tab='home';render()};
+window.openP=id=>{if(!S.players.find(p=>p.id===id))return;viewP=id;tab='people';render();scrollTo(0,0)};
 window.addp=async()=>{const names=$('#np').value.split('\n').map(x=>x.trim()).filter(Boolean);
   if(!names.length)return toast('Type at least one name',1);if(await rpc('add_players',{p_names:names}))$('#np').value=''};
 window.rmp=async id=>{if(await ask('Remove <b>'+esc(nm(id))+'</b> from the party?',{ok:'Remove',cls:'r'}))rpc('remove_player',{p_id:id})};
@@ -91,6 +98,17 @@ window.adj=async()=>{const ids=picked(),d=parseInt($('#ad').value);
   if(!ids.length)return toast('Tick at least one player',1);if(!d)return toast('Enter an amount',1);
   if(await ask(`${d>0?'Give':'Deduct'} <b>${Math.abs(d)}</b> tokens ${d>0?'to':'from'} <b>${ids.length}</b> player(s)?`,{ok:d>0?'Give':'Deduct',cls:d>0?'g':'r'}))
     if(await rpc('adjust',{p_players:ids,p_delta:d,p_reason:$('#ar').value.trim()}))pickAll(false)};
+function lastAdj(){const r=S.ledger.filter(l=>l.adj_batch&&!l.undone);if(!r.length)return null;
+  const bt=Math.max(...r.map(l=>l.adj_batch)),rows=r.filter(l=>l.adj_batch===bt),bk=rows.some(x=>!x.player_id);
+  return{txt:`${esc(rows[0].reason)} · ${bk?'Bank':rows.length+' player(s)'} · ${sg(rows[0].delta)}`}}
+window.undoAdj=async()=>{const a=lastAdj();if(!a)return;if(await ask('Undo the last adjustment?<div class="mut">'+a.txt+'</div>',{ok:'Undo it',cls:'r'}))rpc('undo_adjust')};
+window.bankAdj=async s=>{const d=parseInt($('#bka').value);if(!(d>0))return toast('Enter an amount',1);
+  if(await ask(`${s>0?'Add':'Remove'} <b>${d}</b> tokens ${s>0?'to':'from'} the bank?`,{ok:s>0?'Add':'Remove',cls:s>0?'g':'r'}))
+    if(await rpc('bank_adjust',{p_delta:s*d,p_reason:$('#bkr').value.trim()})){$('#bka').value='';$('#bkr').value=''}};
+window.loan=async()=>{const a=parseInt($('#la').value),id=+$('#lp').value;
+  if(!id)return toast('Pick a player',1);if(!(a>0))return toast('Enter an amount',1);
+  if(await ask(`Lend <b>${a}</b> tokens to <b>${esc(nm(id))}</b> from the bank?<div class="mut">It counts against their ranking until repaid.</div>`,{ok:'Give loan'}))rpc('rescue_loan',{p_player:id,p_amount:a})};
+window.repay=async id=>{if(await ask(`Take back what <b>${esc(nm(id))}</b> can repay of the loan?`,{ok:'Repay'}))rpc('repay_loan',{p_player:id})};
 window.mkduel=async()=>{const s=parseInt($('#vs').value),a=+$('#va').value,b=$('#vb').value;
   if(!(s>0))return toast('Enter a stake',1);
   const vsBank=b==='bank',t=$('#vt').value.trim()||(nm(a)+' vs '+(vsBank?'Bank':nm(+b)));
@@ -101,9 +119,15 @@ window.settle=async(id,i)=>{const b=S.bets.find(x=>x.id===id);
   if(await ask('<b>'+esc(b.options[i])+'</b> wins?<div class="mut">Tokens are paid out right away.</div>',{ok:'Yes, settle',cls:'g'}))rpc('settle_bet',{p_bet:id,p_win:i})};
 window.voidB=async id=>{if(await ask('Void this bet and refund everyone?',{ok:'Void & refund',cls:'r'}))rpc('void_bet',{p_bet:id})};
 window.undoB=async id=>{if(await ask('Undo the result? Payouts will be reversed.',{ok:'Undo result',cls:'r'}))rpc('reopen_bet',{p_bet:id})};
+window.saveEv=()=>rpc('set_event',{p_prizes:[1,2,3].map(i=>$('#pz'+i).value.trim()),p_max_stake:parseInt($('#ms').value)||0});
+window.endEv=async end=>{if(await ask(end?'End the event and freeze the final leaderboard?<div class="mut">New bets are blocked. All live bets must be settled first.</div>':'Reopen the event?',{ok:end?'End event':'Reopen',cls:end?'r':'g'}))rpc('end_event',{p_end:end})};
 window.resetEv=async keep=>{
   if(await ask(keep?'Reset <b>all tokens, bets and history</b>?<div class="mut">Players stay and go back to the starting tokens.</div>':'Delete <b>everything</b> — players, tokens, bets and history?<div class="mut">You will add players again from scratch.</div>',{ok:keep?'Reset event':'Delete everything',cls:'r',type:'RESET'}))
     rpc('reset_event',{p_keep_players:keep})};
+function dl(name,rows){const c=rows.map(r=>r.map(x=>'"'+String(x??'').replace(/"/g,'""')+'"').join(',')).join('\n');
+  const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([c],{type:'text/csv'}));a.download=name;a.click()}
+window.bkBal=()=>dl('party-balances.csv',[['rank','name','balance','loan','net'],...ranked().map((p,i)=>[i+1,p.name,p.balance,p.loan,p.net])]);
+window.bkLed=()=>dl('party-ledger.csv',[['time','who','change','reason'],...[...S.ledger].reverse().map(l=>[new Date(l.created_at).toLocaleString(),nm(l.player_id),l.delta,l.reason])]);
 
 /* ---------- views ---------- */
 function ctl(b){
@@ -118,44 +142,72 @@ function betCard(b,host){
   const list=b.status==='settled'?es.map(e=>`<div class="ln"><span>${esc(nm(e.player_id))} · ${e.stake}🪙 ⇒ <b>${e.payout??0}</b></span></div>`).join(''):'';
   return`<div class="card"><div class="row" style="justify-content:space-between;margin:0"><h3>${esc(b.game)}</h3><span class="badge ${b.status}">${b.status}</span></div><div style="margin-top:4px">${esc(b.title)}</div><div class="mut">${sub}</div><div class="row">${chips}</div>${list?`<div style="margin-top:8px">${list}</div>`:''}${host?ctl(b):''}</div>`;
 }
+const lbRow=(p,i)=>`<div class="lb" onclick="openP(${p.id})" style="cursor:pointer"><b>${['🥇','🥈','🥉'][i]||'#'+(i+1)}</b><span>${esc(p.name)}${p.loan?` <small class="mut">🆘 owes ${p.loan}</small>`:''}</span><b style="width:auto">${p.balance}🪙</b><small>${sg(p.net-START)}</small></div>`;
+function podium(){if(!S.ev.ended)return'';const r=ranked().slice(0,3),pr=S.ev.prizes||[];
+  return`<div class="card" style="background:var(--g)"><h2>🏁 Final results</h2>${r.map((p,i)=>`<div class="lb"><b>${['🥇','🥈','🥉'][i]}</b><span>${esc(p.name)}${pr[i]?`<div class="mut">🎁 ${esc(pr[i])}</div>`:''}</span><b style="width:auto">${p.net}🪙</b></div>`).join('')}</div>`}
+const top10=()=>`<div class="card" style="background:var(--y)"><h2>🏆 Top 10</h2>${ranked().slice(0,10).map(lbRow).join('')||'<div class="mut">Waiting for players…</div>'}${S.players.some(p=>p.loan)?'<div class="mut" style="margin-top:6px">Ranked by net = tokens − loans</div>':''}</div>`;
+const activity=n=>`<div class="card"><h3>Latest activity</h3>${S.ledger.slice(0,n).map(l=>`<div class="ln"><span>${esc(nm(l.player_id))}: ${esc(l.reason)}<div class="mut">${tm(l.created_at)}</div></span><b>${sg(l.delta)}</b></div>`).join('')||'<div class="mut">Nothing yet</div>'}</div>`;
+function pstats(id){
+  const rows=S.entries.filter(e=>e.player_id===id).map(e=>({e,b:S.bets.find(b=>b.id===e.bet_id)})).filter(x=>x.b&&x.b.status==='settled')
+    .sort((a,c)=>c.b.id-a.b.id).map(x=>({b:x.b,win:(x.e.payout||0)>0,net:(x.e.payout||0)-x.e.stake}));
+  let streak=0;for(const r of rows){if(r.win===rows[0].win)streak++;else break}
+  return{rows,n:rows.length,w:rows.filter(r=>r.win).length,net:rows.reduce((a,r)=>a+r.net,0),streak,sw:rows[0]?.win}}
+function pdetail(id){const p=S.players.find(x=>x.id===id),st=pstats(id);
+  return`<div class="card" style="background:var(--c)"><div class="row" style="justify-content:space-between;margin:0"><h2>${esc(p.name)}</h2><button onclick="viewP=null;render()">✕ Close</button></div>
+  <div class="big" style="margin-top:8px">${p.balance}🪙</div>${p.loan?`<div class="mut" style="opacity:.8">🆘 owes ${p.loan} · net ${p.balance-p.loan}</div>`:''}
+  <div class="row"><span class="chip" style="background:#fff">Played ${st.n}</span><span class="chip" style="background:#fff">Won ${st.w}</span><span class="chip" style="background:#fff">Lost ${st.n-st.w}</span><span class="chip" style="background:#fff">Bets net ${sg(st.net)}</span>${st.streak>1?`<span class="chip" style="background:#fff">${st.sw?'🔥 '+st.streak+' wins in a row':'🧊 '+st.streak+' losses in a row'}</span>`:''}</div>
+  <div style="margin-top:8px">${st.rows.slice(0,8).map(r=>`<div class="ln"><span>${esc(r.b.game)} · ${esc(r.b.title)}</span><b>${r.win?'✅':'❌'} ${sg(r.net)}</b></div>`).join('')||'<div class="mut">No settled bets yet</div>'}</div></div>`}
 
 function render(){
   const m={};document.querySelectorAll('#app [id]').forEach(el=>{if(/INPUT|SELECT|TEXTAREA/.test(el.tagName))m[el.id]=el.type==='checkbox'?el.checked:el.value});
   const ae=document.activeElement,fid=ae&&ae.id&&ae.closest('#app')?ae.id:null,ss=fid?ae.selectionStart:null;
-  const staff=!!role,sup=role==='super',sorted=byBal();
+  if(TV){$('#app').innerHTML=`<div class="top"><h1>PARTY BANK</h1><span class="coin">🏦 ${S.bank}🪙</span></div><div class="wrap tv">${podium()}${top10()}${activity(8)}</div>`;return}
+  const staff=!!role,sup=role==='super';
   let v='';
   if(tab==='home'){
     const tot=S.players.reduce((a,p)=>a+p.balance,0),live=S.bets.filter(b=>b.status==='open'||b.status==='locked').length;
-    const gain=[...S.players].sort((a,b)=>(b.balance-START)-(a.balance-START)),best=gain[0],worst=gain[gain.length-1];
-    v=`<div class="grid"><div class="card" style="background:var(--c)"><div class="mut">PLAYERS</div><div class="big">${S.players.length}</div></div>
+    const r=ranked(),best=r.reduce((a,p)=>!a||p.net>a.net?p:a,null),worst=r.reduce((a,p)=>!a||p.net<a.net?p:a,null);
+    v=`${podium()}<div class="grid"><div class="card" style="background:var(--c)"><div class="mut">PLAYERS</div><div class="big">${S.players.length}</div></div>
     <div class="card" style="background:var(--y)"><div class="mut">🏦 BANK</div><div class="big">${S.bank}</div></div>
     <div class="card"><div class="mut">TOKENS IN PLAY</div><div class="big">${tot}</div></div>
     <div class="card"><div class="mut">LIVE BETS</div><div class="big">${live}</div></div></div>
-    <div class="card" style="background:var(--y)"><h2>🏆 Top 10</h2>${sorted.slice(0,10).map((p,i)=>`<div class="lb"><b>${['🥇','🥈','🥉'][i]||'#'+(i+1)}</b><span>${esc(p.name)}</span><b style="width:auto">${p.balance}🪙</b><small>${sg(p.balance-START)}</small></div>`).join('')||'<div class="mut">Waiting for players…</div>'}</div>
-    ${best?`<div class="card"><h3>Highlights</h3><div class="ln"><span>🚀 Biggest gain</span><b>${esc(best.name)} ${sg(best.balance-START)}</b></div><div class="ln"><span>📉 Biggest drop</span><b>${esc(worst.name)} ${sg(worst.balance-START)}</b></div></div>`:''}
-    <div class="card"><h3>Latest activity</h3>${S.ledger.slice(0,12).map(l=>`<div class="ln"><span>${esc(nm(l.player_id))}: ${esc(l.reason)}<div class="mut">${tm(l.created_at)}</div></span><b>${sg(l.delta)}</b></div>`).join('')||'<div class="mut">Nothing yet</div>'}</div>`;
+    ${top10()}
+    ${best?`<div class="card"><h3>Highlights</h3><div class="ln"><span>🚀 Biggest gain</span><b>${esc(best.name)} ${sg(best.net-START)}</b></div><div class="ln"><span>📉 Biggest drop</span><b>${esc(worst.name)} ${sg(worst.net-START)}</b></div></div>`:''}
+    ${activity(12)}`;
   }else if(tab==='people'){
-    v=`<div class="card"><h2>👥 Everyone (${S.players.length})</h2>${byName().map(p=>`<div class="lb"><span>${esc(p.name)}</span><b style="width:auto">${p.balance}🪙</b><small>${sg(p.balance-START)}</small></div>`).join('')||'<div class="mut">No players yet</div>'}</div>`;
+    const q=Q.trim().toLowerCase(),list=byName().filter(p=>p.name.toLowerCase().includes(q));
+    v=`${viewP&&S.players.find(p=>p.id===viewP)?pdetail(viewP):''}<div class="card"><h2>👥 Everyone (${S.players.length})</h2><div class="row"><input id="q" placeholder="Search name…" value="${esc(Q)}" oninput="Q=this.value;render()" style="width:100%"></div>
+    ${list.map(p=>`<div class="lb" onclick="openP(${p.id})" style="cursor:pointer"><span>${esc(p.name)}${p.loan?` <small class="mut">🆘 owes ${p.loan}</small>`:''}</span><b style="width:auto">${p.balance}🪙</b><small>${sg(p.balance-(p.loan||0)-START)}</small></div>`).join('')||'<div class="mut" style="margin-top:8px">No players found</div>'}</div>`;
   }else if(tab==='bets'){
     v=S.bets.length?S.bets.map(b=>betCard(b,false)).join(''):'<div class="card">No bets yet. Hang tight! 🎲</div>';
   }else if(!staff){
-    v=`<div class="card" style="margin-top:40px;background:var(--y)"><h2>🔑 Host</h2><div class="row"><input id="sc" type="password" placeholder="Host code"><button class="g" onclick="unlock()">Unlock</button></div></div>`;
+    v=`<div class="card" style="margin-top:40px;background:var(--y)"><h2>🔑 Host</h2><div class="row"><input id="sc" type="password" placeholder="Super admin or co-host code"><button class="g" onclick="unlock()">Unlock</button></div></div>`;
   }else{
     const open=S.bets.filter(b=>b.status==='open'||b.status==='locked'),done=S.bets.filter(b=>b.status==='settled'||b.status==='void');
-    const po=byName().map(p=>`<option value="${p.id}">${esc(p.name)} (${p.balance})</option>`).join('');
-    v=`<div class="row" style="justify-content:space-between"><span class="badge ${role}">${role}</span><button onclick="lock()">Lock host mode</button></div>
-    <div class="card" style="background:var(--c)"><h3>➕ Add players</h3><div class="mut">One name per line. Each gets ${START} tokens.</div><div class="row"><textarea id="np" placeholder="Ravi&#10;Anita&#10;Kiran"></textarea></div><div class="row"><button class="g" onclick="addp()">Add to party</button></div></div>
+    const po=byName().map(p=>`<option value="${p.id}">${esc(p.name)} (${p.balance})</option>`).join(''),la=lastAdj(),pz=S.ev.prizes||[];
+    v=`<div class="row" style="justify-content:space-between"><span class="badge ${role}">${sup?'👑 Super admin':'🤝 Co-host'}</span><button onclick="lock()">Lock host mode</button></div>
+    ${sup?'':`<div class="card" style="background:var(--y)"><b>🤝 Co-host mode</b><div class="mut" style="opacity:.8">You can add players and run duels. Token changes, bank, loans, undo, event settings and reset are super-admin only.</div></div>`}
+    ${S.ev.ended?`<div class="card" style="background:var(--g)"><b>🏁 Event ended</b><div class="mut" style="opacity:.8">New bets are blocked.${sup?' Reopen it from Event settings below.':''}</div></div>`:''}
+    <div class="card" style="background:var(--c)"><h3>➕ Add players</h3><div class="mut" style="opacity:.8">One name per line. Each gets ${START} tokens.</div><div class="row"><textarea id="np" placeholder="Ravi&#10;Anita&#10;Kiran"></textarea></div><div class="row"><button class="g" onclick="addp()">Add to party</button></div></div>
     ${sup?`<div class="card"><h3>💰 Add / deduct tokens</h3><div class="row">${byName().map(p=>`<label class="chip"><input type="checkbox" id="pk${p.id}">${esc(p.name)} · ${p.balance}</label>`).join('')||'<span class="mut">No players yet</span>'}</div>
     <div class="row"><button onclick="pickAll(true)">Select all</button><button onclick="pickAll(false)">Clear</button></div>
-    <div class="row"><button class="r" onclick="preset(-50,'Late arrival')">⏰ Late −50</button><button class="g" onclick="preset(50,'Early bird bonus')">🐦 Early +50</button></div>
-    <div class="row"><input id="ad" type="number" placeholder="+/- tokens" style="width:120px"><input id="ar" placeholder="Reason" style="flex:1"><button class="g" onclick="adj()">Apply</button></div></div>`:''}
-    <div class="card" style="background:var(--v)"><h3 style="color:#fff">⚔️ New duel</h3><div class="mut" style="color:#fff">Pick a player, an opponent (or the Bank) and a stake. Winner gets double.</div><div class="row"><select id="vg">${GAMES.map(g=>`<option>${esc(g)}</option>`).join('')}</select><input id="vs" type="number" min="1" placeholder="stake" style="width:100px"></div><div class="row"><select id="va">${po}</select><b style="color:#fff">VS</b><select id="vb"><option value="bank">🏦 Bank</option>${po}</select></div><div class="row"><input id="vt" placeholder="Title (optional)" style="width:100%"></div><div class="row"><button class="g" onclick="mkduel()">Start duel</button></div></div>
+    <div class="row"><button class="r" onclick="preset(-200,'Late arrival')">⏰ Late −200</button><button class="g" onclick="preset(100,'Early bird bonus')">🐦 Early +100</button></div>
+    <div class="row"><input id="ad" type="number" placeholder="+/- tokens" style="width:120px"><input id="ar" placeholder="Reason" style="flex:1"><button class="g" onclick="adj()">Apply</button></div>
+    ${la?`<div class="row"><button onclick="undoAdj()">↩ Undo last adjustment</button><span class="mut">${la.txt}</span></div>`:''}</div>`:''}
+    <div class="card" style="background:var(--v)"><h3 style="color:#fff">⚔️ New duel</h3><div class="mut" style="color:#fff">Pick a player, an opponent (or the Bank) and a stake. Winner gets double. Max stake: ${S.ev.max_stake||'no limit'}.</div><div class="row"><select id="vg">${GAMES.map(g=>`<option>${esc(g)}</option>`).join('')}</select><input id="vs" type="number" min="1" placeholder="stake" style="width:100px"></div><div class="row"><select id="va">${po}</select><b style="color:#fff">VS</b><select id="vb"><option value="bank">🏦 Bank</option>${po}</select></div><div class="row"><input id="vt" placeholder="Title (optional)" style="width:100%"></div><div class="row"><button class="g" onclick="mkduel()">Start duel</button></div></div>
     <h2>Live bets</h2>${open.map(b=>betCard(b,true)).join('')||'<div class="card">No live bets</div>'}<h2>Finished</h2>${done.map(b=>betCard(b,true)).join('')}
-    ${sup?`<div class="card"><h3>Players</h3>${byName().map(p=>`<div class="ln"><span>${esc(p.name)} <small class="mut">${p.balance}🪙</small></span><button class="x" onclick="rmp(${p.id})">✕</button></div>`).join('')}</div>
+    ${sup?`<div class="card" style="background:var(--y)"><h3>🏦 Bank wallet: ${S.bank}🪙</h3><div class="row"><input id="bka" type="number" min="1" placeholder="tokens" style="width:110px"><input id="bkr" placeholder="Reason (optional)" style="flex:1"></div><div class="row"><button class="g" onclick="bankAdj(1)">➕ Add to bank</button><button class="r" onclick="bankAdj(-1)">➖ Remove</button></div></div>
+    <div class="card"><h3>🆘 Rescue loans</h3><div class="mut">Lend from the bank to a broke player. Counts against their ranking until repaid.</div><div class="row"><select id="lp">${po}</select><input id="la" type="number" min="1" placeholder="amount" value="200" style="width:100px"><button class="c" onclick="loan()">Give loan</button></div>
+    ${S.players.filter(p=>p.loan>0).map(p=>`<div class="ln"><span>${esc(p.name)} owes <b>${p.loan}</b></span><button onclick="repay(${p.id})">Repay</button></div>`).join('')}</div>
+    <div class="card"><h3>🏁 Event settings</h3><div class="row"><span>Max stake per bet</span><input id="ms" type="number" min="0" value="${S.ev.max_stake||0}" style="width:100px"><span class="mut">0 = no limit</span></div>
+    <div class="row"><input id="pz1" placeholder="🥇 1st prize" value="${esc(pz[0]||'')}" style="width:100%"><input id="pz2" placeholder="🥈 2nd prize" value="${esc(pz[1]||'')}" style="width:100%"><input id="pz3" placeholder="🥉 3rd prize" value="${esc(pz[2]||'')}" style="width:100%"></div>
+    <div class="row"><button class="g" onclick="saveEv()">Save</button>${S.ev.ended?'<button onclick="endEv(false)">Reopen event</button>':'<button class="r" onclick="endEv(true)">🏁 End event</button>'}</div></div>`:''}
+    <div class="card"><h3>💾 Backup</h3><div class="mut">Download a copy in case anything goes wrong mid-party.</div><div class="row"><button onclick="bkBal()">Balances CSV</button><button onclick="bkLed()">Full history CSV</button></div></div>
+    ${sup?`<div class="card"><h3>Players</h3>${byName().map(p=>`<div class="ln"><span>${esc(p.name)} <small class="mut">${p.balance}🪙</small></span><button class="r" style="padding:2px 8px" onclick="rmp(${p.id})">✕</button></div>`).join('')}</div>
     <div class="card" style="background:var(--r)"><h3>🧹 Start clean</h3><div class="mut" style="color:#111">Wipe test data before the real event.</div><div class="row"><button onclick="resetEv(true)">Reset tokens &amp; bets (keep players)</button><button onclick="resetEv(false)">Delete everything</button></div></div>`:''}`;
   }
   const tabs=[['home','🏠 Home'],['people','👥 People'],['bets','🎲 Bets'],['host',staff?'🎮 Host':'🔑 Host']];
-  $('#app').innerHTML=`<div class="top"><h1>PARTY BANK</h1><span class="coin">🏦 ${S.bank}🪙</span></div><div class="wrap">${v}</div><nav>${tabs.map(t=>`<button class="${tab===t[0]?'on':''}" onclick="tab='${t[0]}';render()">${t[1]}</button>`).join('')}</nav>`;
+  $('#app').innerHTML=`<div class="top"><h1>PARTY BANK</h1><div class="row" style="margin:0">${staff?`<span class="badge ${role}">${sup?'👑 Super':'🤝 Co-host'}</span>`:''}<span class="coin">🏦 ${S.bank}🪙</span></div></div><div class="wrap">${v}</div><nav>${tabs.map(t=>`<button class="${tab===t[0]?'on':''}" onclick="tab='${t[0]}';render()">${t[1]}</button>`).join('')}</nav>`;
   for(const id in m){const el=document.getElementById(id);if(el){if(el.type==='checkbox')el.checked=m[id];else el.value=m[id]}}
   if(fid){const el=document.getElementById(fid);if(el){el.focus();try{el.setSelectionRange(ss,ss)}catch(e){}}}
 }
