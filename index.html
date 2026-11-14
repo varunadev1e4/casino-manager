@@ -48,6 +48,7 @@ nav button{flex:1;max-width:110px;padding:5px 2px;font-size:11px;line-height:1.1
 .blk{width:100%;height:0;overflow:hidden;border:3px solid #111;border-bottom:0;border-radius:12px 12px 0 0;color:#111;font:400 44px Bungee,Impact,sans-serif;text-align:center;padding-top:8px;transition:height 1.2s cubic-bezier(.2,.9,.3,1.15)}
 #sheet{display:none}
 @media print{body{background:#fff;padding:0}body>*:not(#sheet){display:none!important}#sheet{display:block;font:14px 'Space Grotesk',Arial,sans-serif;color:#000}#sheet h1{font-size:26px;margin:0 0 4px}#sheet h2{font-size:18px;margin:18px 0 6px}#sheet table{width:100%;border-collapse:collapse}#sheet td,#sheet th{border-bottom:1px solid #999;padding:4px 6px;text-align:left}@page{margin:14mm}}
+.dot{width:14px;height:14px;border-radius:50%;border:2px solid #111;background:#7bd88f;display:inline-block}.dot.off{background:#ff5a4f}.top{flex-wrap:wrap}
 </style></head>
 <body><div id="app"></div><div id="toast"></div><div id="cer"></div><div id="flash"></div><div id="sheet"></div>
 <div id="modal"><div class="card"><div id="mm"></div><input id="mi" autocomplete="off"><div class="row" style="justify-content:flex-end"><button id="mn">Cancel</button><button id="my" class="g">Confirm</button></div></div></div>
@@ -59,7 +60,7 @@ const $=s=>document.querySelector(s);
 const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const GAMES=['Flip 7','Exploding Kittens','Blackjack','Least Count','Mafia','Trivia Quiz',"Don't Say Same Thing",'Whole Party','Other'];
 const START=1000, TV=new URLSearchParams(location.search).has('tv');
-let booted=false,seen=null,cerT=[];
+let booted=false,seen=null,cerT=[],live=false,gameSel='All',AC=null,muted=localStorage.getItem('pb_mute')==='1';
 let S={players:[],bank:0,bets:[],entries:[],ledger:[],ev:{ended:false,prizes:[],final:null,max_stake:500}},tab='home',timer,code=null,role=null,viewP=null,Q='';
 const nm=id=>id?(S.players.find(p=>p.id===id)?.name||'?'):'🏦 Bank';
 const tm=t=>new Date(t).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'});
@@ -84,7 +85,9 @@ async function init(){
   const saved=localStorage.getItem('pb_code');
   if(saved&&!TV){const {data}=await sb.rpc('check_code',{p_code:saved});if(data){code=saved;role=data}else localStorage.removeItem('pb_code')}
   await load();
-  sb.channel('party').on('postgres_changes',{event:'*',schema:'public'},()=>{clearTimeout(timer);timer=setTimeout(load,300)}).subscribe();
+  sb.channel('party').on('postgres_changes',{event:'*',schema:'public'},()=>{clearTimeout(timer);timer=setTimeout(load,300)}).subscribe(st=>setLive(st==='SUBSCRIBED'));
+  setInterval(()=>{if(!live)load()},8000);
+  if(TV&&navigator.wakeLock){const wl=()=>navigator.wakeLock.request('screen').catch(()=>{});wl();document.addEventListener('visibilitychange',()=>{if(!document.hidden)wl()})}
 }
 async function load(){
   const [p,b,bt,e,l,ev]=await Promise.all([sb.from('players').select('*'),sb.from('bank').select('balance').single(),
@@ -147,7 +150,7 @@ window.bkLed=()=>dl('party-ledger.csv',[['time','who','change','reason'],...[...
 /* ---------- views ---------- */
 function ctl(b){
   if(b.status==='void')return'';
-  if(b.status==='settled')return role==='super'?`<div class="row"><button onclick="undoB(${b.id})">↩ Undo result</button></div>`:'';
+  if(b.status==='settled')return role?`<div class="row"><button onclick="undoB(${b.id})">↩ Undo result</button></div>`:'';
   return`<div class="row">${b.options.map((o,i)=>`<button class="g" onclick="settle(${b.id},${i})">👑 ${esc(o)} wins</button>`).join('')}<button class="r" onclick="voidB(${b.id})">Void</button></div>`;
 }
 function betCard(b,host){
@@ -171,7 +174,7 @@ function pdetail(id){const p=S.players.find(x=>x.id===id),st=pstats(id);
   return`<div class="card" style="background:var(--c)"><div class="row" style="justify-content:space-between;margin:0"><h2>${esc(p.name)}</h2><button onclick="viewP=null;render()">✕ Close</button></div>
   <div class="big" style="margin-top:8px">${p.balance}🪙</div>${p.loan?`<div class="mut" style="opacity:.8">🆘 owes ${p.loan} · net ${p.balance-p.loan}</div>`:''}
   <div class="row"><span class="chip" style="background:#fff">Played ${st.n}</span><span class="chip" style="background:#fff">Won ${st.w}</span><span class="chip" style="background:#fff">Lost ${st.n-st.w}</span><span class="chip" style="background:#fff">Bets net ${sg(st.net)}</span>${st.streak>1?`<span class="chip" style="background:#fff">${st.sw?'🔥 '+st.streak+' wins in a row':'🧊 '+st.streak+' losses in a row'}</span>`:''}</div>
-  <div style="margin-top:8px">${st.rows.slice(0,8).map(r=>`<div class="ln"><span>${esc(r.b.game)} · ${esc(r.b.title)}</span><b>${r.win?'✅':'❌'} ${sg(r.net)}</b></div>`).join('')||'<div class="mut">No settled bets yet</div>'}</div></div>`}
+  <div style="margin-top:10px"><div class="mut" style="opacity:.8">📈 Balance over the evening</div>${spark(hist(id),START,'#5b2bb0')}</div><div style="margin-top:8px">${st.rows.slice(0,8).map(r=>`<div class="ln"><span>${esc(r.b.game)} · ${esc(r.b.title)}</span><b>${r.win?'✅':'❌'} ${sg(r.net)}</b></div>`).join('')||'<div class="mut">No settled bets yet</div>'}</div></div>`}
 
 /* ---------- economy ---------- */
 const bar=(v,mx)=>`<div style="height:12px;border:2px solid #111;border-radius:6px;background:#fff;position:relative;overflow:hidden"><div style="position:absolute;top:0;bottom:0;${v>=0?'left:50%':'right:50%'};width:${mx?Math.min(50,Math.abs(v)/mx*50):0}%;background:${v>=0?'var(--g)':'var(--r)'}"></div><div style="position:absolute;left:50%;top:0;bottom:0;width:2px;background:#111"></div></div>`;
@@ -192,6 +195,33 @@ function ecoData(){
     welcome:S.ledger.filter(l=>l.reason==='Welcome tokens').reduce((a,l)=>a+l.delta,0),
     held:S.players.reduce((a,p)=>a+p.balance,0),loans:S.players.reduce((a,p)=>a+(p.loan||0),0),
     bankBets:S.bets.filter(b=>b.mode==='bank'&&b.status==='settled').length}}
+let ecoSel=null;
+window.selNode=id=>{ecoSel=ecoSel===id?null:id;render()};
+function meshCard(d){
+  const r=ranked().filter(p=>S.players.find(x=>x.id===p.id)),n=r.length;
+  if(!n)return'';
+  const cx=220,cy=220,R=n>1?150:0,pos={},mb=Math.max(1,...r.map(p=>p.balance));
+  r.forEach((p,i)=>{const a=2*Math.PI*i/n-Math.PI/2;pos[p.id]={x:cx+R*Math.cos(a),y:cy+R*Math.sin(a),a,r:7+9*(p.balance/mb),p}});
+  pos.bank={x:cx,y:cy,r:24};
+  const ed=[];
+  d.flows.forEach(f=>{if(pos[f.from]&&pos[f.to])ed.push({a:f.from,b:f.to,w:f.amt,c:'#9b5de5',m:'ah'})});
+  Object.entries(d.vs).forEach(([id,v])=>{id=+id;if(!pos[id]||!v)return;ed.push(v>0?{a:'bank',b:id,w:v,c:'#2fa84f',m:'ag'}:{a:id,b:'bank',w:-v,c:'#e0372c',m:'ar'})});
+  const mx=Math.max(1,...ed.map(e=>e.w)),sel=ecoSel&&pos[ecoSel]?ecoSel:null;
+  const lines=ed.map(e=>{const A=pos[e.a],B=pos[e.b],dx=B.x-A.x,dy=B.y-A.y,L=Math.hypot(dx,dy)||1,ux=dx/L,uy=dy/L,on=!sel||e.a===sel||e.b===sel;
+    return`<line x1="${(A.x+ux*(A.r+2)).toFixed(1)}" y1="${(A.y+uy*(A.r+2)).toFixed(1)}" x2="${(B.x-ux*(B.r+6)).toFixed(1)}" y2="${(B.y-uy*(B.r+6)).toFixed(1)}" stroke="${e.c}" stroke-width="${(1+e.w/mx*5).toFixed(1)}" opacity="${on?.85:.08}" marker-end="url(#${e.m})"/>`}).join('');
+  const linked=new Set();ed.forEach(e=>{if(e.a===sel)linked.add(e.b);if(e.b===sel)linked.add(e.a)});
+  const small=n>16,nodes=r.map(p=>{const q=pos[p.id],dim=sel&&sel!==p.id&&!linked.has(p.id),c=Math.cos(q.a),lx=cx+(R+q.r+5)*c,ly=cy+(R+q.r+5)*Math.sin(q.a);
+    const nm2=p.name.length>9?p.name.slice(0,8)+'…':p.name;
+    return`<g onclick="selNode(${p.id})" style="cursor:pointer" opacity="${dim?.25:1}"><circle cx="${q.x.toFixed(1)}" cy="${q.y.toFixed(1)}" r="${q.r.toFixed(1)}" fill="${p.net>=START?'#7bd88f':'#ff8a80'}" stroke="#111" stroke-width="${sel===p.id?4:2}"/><text x="${lx.toFixed(1)}" y="${(ly+3).toFixed(1)}" font-size="${small?9:11}" font-weight="700" text-anchor="${c>.25?'start':c<-.25?'end':'middle'}" fill="#111">${esc(nm2)}</text></g>`}).join('');
+  const info=sel?(()=>{const rows=ed.filter(e=>e.a===sel||e.b===sel),nmx=x=>x==='bank'?'🏦 Bank':nm(x);
+    return`<div style="margin-top:8px"><b>${esc(nm(sel))}</b> · ${pos[sel].p.balance}🪙 <button style="padding:2px 8px" onclick="openP(${sel})">Profile</button>${rows.map(e=>`<div class="ln"><span>${esc(nmx(e.a))} ➜ ${esc(nmx(e.b))}</span><b>${e.w}🪙</b></div>`).join('')||'<div class="mut">No money moved with anyone yet</div>'}</div>`})():'<div class="mut" style="margin-top:6px">Tap a player to see who they traded with.</div>';
+  return`<div class="card"><h3>🕸 Money web</h3><div class="mut">Each dot is a player (bigger = more tokens, green = ahead of start). Lines show net money moved; arrows point to who received it.</div>
+  <svg viewBox="0 0 440 440" style="width:100%;height:auto;display:block;margin-top:6px"><defs>
+  <marker id="ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="9" markerHeight="9" markerUnits="userSpaceOnUse" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="#9b5de5"/></marker>
+  <marker id="ag" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="9" markerHeight="9" markerUnits="userSpaceOnUse" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="#2fa84f"/></marker>
+  <marker id="ar" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="9" markerHeight="9" markerUnits="userSpaceOnUse" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="#e0372c"/></marker></defs>
+  ${lines}<g><circle cx="${cx}" cy="${cy}" r="24" fill="#ffd93d" stroke="#111" stroke-width="3"/><text x="${cx}" y="${cy+7}" font-size="22" text-anchor="middle">🏦</text></g>${nodes}</svg>
+  <div class="row" style="font-size:13px"><span><b style="color:#9b5de5">━</b> player ➜ player</span><span><b style="color:#2fa84f">━</b> bank pays player</span><span><b style="color:#e0372c">━</b> player pays bank</span></div>${info}</div>`}
 function ecoView(){
   const d=ecoData(),stakes=d.cats['Player stakes in']||0,out=-(d.cats['Payouts to winners']||0)-(d.cats['Rescue loans out']||0);
   const vsRows=Object.entries(d.vs).map(([id,n])=>({id:+id,n})).sort((a,b)=>b.n-a.n),vmx=Math.max(1,...vsRows.map(r=>Math.abs(r.n)));
@@ -199,11 +229,13 @@ function ecoView(){
   const fmx=Math.max(1,...d.flows.map(f=>f.amt)),bnet=vsRows.reduce((a,r)=>a-r.n,0);
   return`<div class="card" style="background:var(--c)"><h2>💱 Economy</h2><div class="mut" style="opacity:.8">Where the tokens are and how they move.</div>
   <div class="row"><span class="chip" style="background:#fff">👥 Players ${d.held}🪙</span><span class="chip" style="background:#fff">🏦 Bank ${S.bank}🪙</span>${d.escrow?`<span class="chip" style="background:#fff">⏳ In live duels ${d.escrow}🪙</span>`:''}</div></div>
+  ${meshCard(d)}
   <div class="card"><h3>Players ⇄ Bank</h3>
   <div style="display:flex;align-items:center;gap:8px;margin-top:12px"><div style="border:3px solid #111;border-radius:12px;padding:10px;background:var(--c);text-align:center;min-width:92px">👥<br>Players</div>
   <div style="flex:1;text-align:center;font-size:14px"><div>➜ stakes in <b>${stakes}</b></div><div style="margin-top:4px">⬅ payouts &amp; loans out <b>${out}</b></div></div>
   <div style="border:3px solid #111;border-radius:12px;padding:10px;background:var(--y);text-align:center;min-width:92px">🏦<br>Bank</div></div>
   <div class="ln" style="margin-top:10px"><span>Bank result from ${d.bankBets} settled bet(s)</span><b>${sg(bnet)}</b></div></div>
+  <div class="card"><h3>📈 Bank balance over time</h3>${spark(hist(null),null,'#c99700')}</div>
   <div class="card"><h3>🏦 Bank movements</h3>${catRows.map(([k,v])=>`<div style="margin-top:8px"><div class="ln" style="border:0;padding:0"><span>${k}</span><b>${sg(v)}</b></div>${bar(v,cmx)}</div>`).join('')||'<div class="mut">No bank movement yet</div>'}</div>
   <div class="card"><h3>🦈 Players vs Bank</h3><div class="mut">Green: beating the bank · Red: feeding it</div>${vsRows.map(r=>`<div style="margin-top:8px"><div class="ln" style="border:0;padding:0"><span>${esc(nm(r.id))}</span><b>${sg(r.n)}</b></div>${bar(r.n,vmx)}</div>`).join('')||'<div class="mut" style="margin-top:6px">No settled bank bets yet</div>'}</div>
   <div class="card"><h3>⚔️ Player → Player</h3><div class="mut">Net tokens moved between players in ${d.duels} settled duel(s)</div>${d.flows.slice(0,10).map(f=>`<div style="margin-top:8px"><div class="ln" style="border:0;padding:0"><span>${esc(nm(f.from))} ➜ ${esc(nm(f.to))}</span><b>${f.amt}🪙</b></div>${bar1(f.amt,fmx,'var(--v)')}</div>`).join('')||'<div class="mut" style="margin-top:6px">No settled duels yet</div>'}</div>
@@ -289,20 +321,48 @@ function ceremony(){
   <div class="row" style="margin-top:22px"><button id="cx">Close</button><button id="cr" class="c">Replay</button></div>`;
   C.style.display='flex';
   $('#cx').onclick=()=>{C.style.display='none';cerT.forEach(clearTimeout)};$('#cr').onclick=ceremony;
-  [2,1,0].filter(i=>r[i]).forEach((i,k)=>cerT.push(setTimeout(()=>{const b=$('#b'+i),w=$('#w'+i);if(!b)return;b.style.height=meta[i].h+'px';w.classList.add('show');if(i===0)confetti(C,90)},700+k*2200)))}
+  [2,1,0].filter(i=>r[i]).forEach((i,k)=>cerT.push(setTimeout(()=>{const b=$('#b'+i),w=$('#w'+i);if(!b)return;b.style.height=meta[i].h+'px';w.classList.add('show');if(i===0){confetti(C,90);sfx.gold()}else sfx.step()},700+k*2200)))}
 function flash(b){
   const es=S.entries.filter(e=>e.bet_id===b.id),st=b.stake??es[0]?.stake??0,w=b.options[b.winning];let t;
   if(b.options.length===2&&b.mode==='bank')t=b.winning===0?`🎉 <b>${esc(w)}</b> beat the Bank! +${st}🪙`:`🏦 The Bank beat <b>${esc(b.options[0])}</b> · −${st}🪙`;
   else if(b.options.length===2)t=`🎉 <b>${esc(w)}</b> beat ${esc(b.options[1-b.winning])}! +${st}🪙`;
   else t=`🏁 <b>${esc(w)}</b> won: ${esc(b.title)}`;
+  const pw=b.mode==='bank'&&b.options.length===2?b.winning===0:true;pw?sfx.win():sfx.lose();
   const F=$('#flash');F.innerHTML=t;F.style.display='block';confetti(F,30);clearTimeout(F._t);F._t=setTimeout(()=>F.style.display='none',5000)}
 function checkSettled(){const cur=S.bets.filter(b=>b.status==='settled');
   if(seen)cur.filter(b=>!seen.has(b.id)).forEach(flash);seen=new Set(cur.map(b=>b.id))}
 
+/* ---------- status dot, sound, history, game board ---------- */
+function setLive(v){live=v;const d=$('#dot');if(d){d.className='dot'+(v?'':' off');d.title=v?'Live updates on':'Reconnecting…'}}
+const dotH=()=>`<span id="dot" class="dot${live?'':' off'}" title="${live?'Live updates on':'Reconnecting…'}"></span>`;
+const sndH=()=>`<button id="snd" style="padding:2px 8px;box-shadow:2px 2px 0 var(--ink)" onclick="toggleMute()" title="Sound">${muted?'🔇':'🔊'}</button>`;
+function audio(){if(!AC){try{AC=new(window.AudioContext||window.webkitAudioContext)()}catch(e){}}if(AC&&AC.state==='suspended')AC.resume();return AC}
+document.addEventListener('pointerdown',audio);
+function tone(f,t,d,type='triangle',v=.16){const a=AC;if(!a||muted)return;const o=a.createOscillator(),g=a.createGain(),s=a.currentTime+t;
+  o.type=type;o.frequency.value=f;o.connect(g);g.connect(a.destination);g.gain.setValueAtTime(0,s);g.gain.linearRampToValueAtTime(v,s+.02);g.gain.exponentialRampToValueAtTime(.001,s+d);o.start(s);o.stop(s+d+.05)}
+const sfx={win:()=>[523,659,784,1047].forEach((f,i)=>tone(f,i*.11,.28)),lose:()=>[392,330,262].forEach((f,i)=>tone(f,i*.16,.3,'sawtooth',.07)),
+  step:()=>{tone(392,0,.3);tone(523,.12,.4)},gold:()=>{[523,523,523,659,784,1047].forEach((f,i)=>tone(f,i*.14,.35));[1047,1319,1568].forEach((f,i)=>tone(f,.95+i*.12,.6))}};
+window.toggleMute=()=>{muted=!muted;localStorage.setItem('pb_mute',muted?'1':'0');if(!muted){audio();tone(880,0,.15)}render()};
+function hist(id){let cur=id==null?S.bank:S.players.find(p=>p.id===id)?.balance;if(cur==null)return[];
+  const out=[cur];for(const l of S.ledger){if(id==null?l.player_id:l.player_id!==id)continue;cur-=l.delta;out.push(cur)}return out.reverse()}
+function spark(vals,ref,col){if(vals.length<2)return'<div class="mut">Not enough activity yet</div>';
+  const W=300,H=90,mn=Math.min(...vals,ref??Infinity),mx=Math.max(...vals,ref??-Infinity),sp=mx-mn||1,y=v=>(H-8-(v-mn)/sp*(H-16)).toFixed(1);
+  const pts=vals.map((v,i)=>`${(i/(vals.length-1)*W).toFixed(1)},${y(v)}`).join(' ');
+  return`<svg viewBox="0 0 ${W} ${H}" style="width:100%;height:auto;display:block;background:#fff;border:2px solid #111;border-radius:10px">${ref!=null?`<line x1="0" x2="${W}" y1="${y(ref)}" y2="${y(ref)}" stroke="#111" stroke-dasharray="4 4" opacity=".35"/>`:''}<polyline points="${pts}" fill="none" stroke="${col}" stroke-width="3" stroke-linejoin="round" vector-effect="non-scaling-stroke"/><circle cx="${W}" cy="${y(vals[vals.length-1])}" r="4" fill="${col}"/></svg><div class="ln" style="border:0;padding:2px 0"><span class="mut">low ${mn}</span>${ref!=null?'<span class="mut">- - start</span>':''}<span class="mut">high ${mx}</span></div>`}
+function gameBoard(){
+  const done=S.bets.filter(b=>b.status==='settled');if(!done.length)return'';
+  const games=[...new Set(done.map(b=>b.game).filter(Boolean))].sort();if(gameSel!=='All'&&!games.includes(gameSel))gameSel='All';
+  const st={};done.filter(b=>gameSel==='All'||b.game===gameSel).forEach(b=>S.entries.filter(e=>e.bet_id===b.id).forEach(e=>{
+    const s=st[e.player_id]=st[e.player_id]||{n:0,w:0,net:0};s.n++;if((e.payout||0)>0)s.w++;s.net+=(e.payout||0)-e.stake}));
+  const rows=Object.entries(st).map(([id,s])=>({id:+id,...s})).sort((a,b)=>b.net-a.net||b.w-a.w).slice(0,10);
+  return`<div class="card"><h3>🎮 Game leaderboard</h3><div class="row"><select id="gsel" onchange="gameSel=this.value;render()"><option>All</option>${games.map(g=>`<option${g===gameSel?' selected':''}>${esc(g)}</option>`).join('')}</select></div>
+  ${rows.map((r,i)=>`<div class="lb"><b>${['🥇','🥈','🥉'][i]||'#'+(i+1)}</b><span>${esc(nm(r.id))}<div class="mut">${r.w}W · ${r.n-r.w}L</div></span><b style="width:auto">${sg(r.net)}</b></div>`).join('')}</div>`}
+window.qs=n=>{$('#vs').value=n};
+
 function render(){
   const m={};document.querySelectorAll('#app [id]').forEach(el=>{if(/INPUT|SELECT|TEXTAREA/.test(el.tagName))m[el.id]=el.type==='checkbox'?el.checked:el.value});
   const ae=document.activeElement,fid=ae&&ae.id&&ae.closest('#app')?ae.id:null,ss=fid?ae.selectionStart:null;
-  if(TV){$('#app').innerHTML=`<div class="top"><h1>PARTY BANK</h1><span class="coin">🏦 ${S.bank}🪙</span></div><div class="wrap tv">${podium()}${top10()}${activity(8)}</div>`;return}
+  if(TV){$('#app').innerHTML=`<div class="top"><h1>PARTY BANK</h1><div class="row" style="margin:0">${dotH()}${sndH()}<span class="coin">🏦 ${S.bank}🪙</span></div></div><div class="wrap tv">${podium()}${top10()}${activity(8)}</div>`;return}
   const staff=!!role,sup=role==='super';
   let v='';
   if(tab==='home'){
@@ -314,42 +374,44 @@ function render(){
     <div class="card"><div class="mut">LIVE BETS</div><div class="big">${live}</div></div></div>
     ${top10()}
     ${best?`<div class="card"><h3>Highlights</h3><div class="ln"><span>🚀 Biggest gain</span><b>${esc(best.name)} ${sg(best.net-START)}</b></div><div class="ln"><span>📉 Biggest drop</span><b>${esc(worst.name)} ${sg(worst.net-START)}</b></div></div>`:''}
-    ${awardsCard()}${shareCard()}${activity(12)}`;
+    ${awardsCard()}${staff?shareCard():''}${activity(12)}`;
   }else if(tab==='people'){
     const q=Q.trim().toLowerCase(),list=byName().filter(p=>p.name.toLowerCase().includes(q));
     v=`${viewP&&S.players.find(p=>p.id===viewP)?pdetail(viewP):''}<div class="card"><h2>👥 Everyone (${S.players.length})</h2><div class="row"><input id="q" placeholder="Search name…" value="${esc(Q)}" oninput="Q=this.value;render()" style="width:100%"></div>
     ${list.map(p=>`<div class="lb" onclick="openP(${p.id})" style="cursor:pointer"><span>${esc(p.name)}${p.loan?` <small class="mut">🆘 owes ${p.loan}</small>`:''}</span><b style="width:auto">${p.balance}🪙</b><small>${sg(p.balance-(p.loan||0)-START)}</small></div>`).join('')||'<div class="mut" style="margin-top:8px">No players found</div>'}</div>`;
   }else if(tab==='eco'){v=ecoView();
   }else if(tab==='bets'){
-    v=S.bets.length?S.bets.map(b=>betCard(b,false)).join(''):'<div class="card">No bets yet. Hang tight! 🎲</div>';
+    v=gameBoard()+(S.bets.length?S.bets.map(b=>betCard(b,false)).join(''):'<div class="card">No bets yet. Hang tight! 🎲</div>');
   }else if(!staff){
     v=`<div class="card" style="margin-top:40px;background:var(--y)"><h2>🔑 Host</h2><div class="row"><input id="sc" type="password" placeholder="Super admin or co-host code"><button class="g" onclick="unlock()">Unlock</button></div></div>`;
   }else{
     const open=S.bets.filter(b=>b.status==='open'||b.status==='locked'),done=S.bets.filter(b=>b.status==='settled'||b.status==='void');
     const po=byName().map(p=>`<option value="${p.id}">${esc(p.name)} (${p.balance})</option>`).join(''),la=lastAdj(),pz=S.ev.prizes||[];
     v=`<div class="row" style="justify-content:space-between"><span class="badge ${role}">${sup?'👑 Super admin':'🤝 Co-host'}</span><button onclick="lock()">Lock host mode</button></div>
-    ${sup?'':`<div class="card" style="background:var(--y)"><b>🤝 Co-host mode</b><div class="mut" style="opacity:.8">You can add players and run duels. Token changes, bank, loans, undo, event settings and reset are super-admin only.</div></div>`}
+    ${sup?'':`<div class="card" style="background:var(--y)"><b>🤝 Co-host mode</b><div class="mut" style="opacity:.8">You can do everything except <b>Event settings</b> (prizes, max stake, end event) and <b>Start clean</b> (reset / delete everything). Those two are super-admin only.</div></div>`}
     ${S.ev.ended?`<div class="card" style="background:var(--g)"><b>🏁 Event ended</b><div class="mut" style="opacity:.8">New bets are blocked.${sup?' Reopen it from Event settings below.':''}</div></div>`:''}
     <div class="card" style="background:var(--c)"><h3>➕ Add players</h3><div class="mut" style="opacity:.8">One name per line. Each gets ${START} tokens.</div><div class="row"><textarea id="np" placeholder="Ravi&#10;Anita&#10;Kiran"></textarea></div><div class="row"><button class="g" onclick="addp()">Add to party</button></div></div>
-    ${sup?`<div class="card"><h3>💰 Add / deduct tokens</h3><div class="row">${byName().map(p=>`<label class="chip"><input type="checkbox" id="pk${p.id}">${esc(p.name)} · ${p.balance}</label>`).join('')||'<span class="mut">No players yet</span>'}</div>
+    ${staff?`<div class="card"><h3>💰 Add / deduct tokens</h3><div class="row">${byName().map(p=>`<label class="chip"><input type="checkbox" id="pk${p.id}">${esc(p.name)} · ${p.balance}</label>`).join('')||'<span class="mut">No players yet</span>'}</div>
     <div class="row"><button onclick="pickAll(true)">Select all</button><button onclick="pickAll(false)">Clear</button></div>
     <div class="row"><button class="r" onclick="preset(-200,'Late arrival')">⏰ Late −200</button><button class="g" onclick="preset(100,'Early bird bonus')">🐦 Early +100</button></div>
     <div class="row"><input id="ad" type="number" placeholder="+/- tokens" style="width:120px"><input id="ar" placeholder="Reason" style="flex:1"><button class="g" onclick="adj()">Apply</button></div>
     <div class="row"><button onclick="undoAdj()"${la?'':' disabled'}>↩ Undo last adjustment</button><span class="mut">${la?la.txt:'Nothing to undo yet'}</span></div></div>`:''}
-    <div class="card" style="background:var(--v)"><h3 style="color:#fff">⚔️ New duel</h3><div class="mut" style="color:#fff">Pick a player, an opponent (or the Bank) and a stake. Winner gets double. Max stake: ${S.ev.max_stake||'no limit'}.</div><div class="row"><select id="vg">${GAMES.map(g=>`<option>${esc(g)}</option>`).join('')}</select><input id="vs" type="number" min="1" placeholder="stake" style="width:100px"></div><div class="row"><select id="va">${po}</select><b style="color:#fff">VS</b><select id="vb"><option value="bank">🏦 Bank</option>${po}</select></div><div class="row"><input id="vt" placeholder="Title (optional)" style="width:100%"></div><div class="row"><button class="g" onclick="mkduel()">Start duel</button></div></div>
+    <div class="card" style="background:var(--v)"><h3 style="color:#fff">⚔️ New duel</h3><div class="mut" style="color:#fff">Pick a player, an opponent (or the Bank) and a stake. Winner gets double. Max stake: ${S.ev.max_stake||'no limit'}.</div><div class="row"><select id="vg">${GAMES.map(g=>`<option>${esc(g)}</option>`).join('')}</select><input id="vs" type="number" min="1" placeholder="stake" style="width:100px"></div><div class="row">${[50,100,250,500].map(n=>`<button class="c" onclick="qs(${n})"${S.ev.max_stake>0&&n>S.ev.max_stake?' disabled':''}>${n}</button>`).join('')}</div><div class="row"><select id="va">${po}</select><b style="color:#fff">VS</b><select id="vb"><option value="bank">🏦 Bank</option>${po}</select></div><div class="row"><input id="vt" placeholder="Title (optional)" style="width:100%"></div><div class="row"><button class="g" onclick="mkduel()">Start duel</button></div></div>
     <h2>Live bets</h2>${open.map(b=>betCard(b,true)).join('')||'<div class="card">No live bets</div>'}<h2>Finished</h2>${done.map(b=>betCard(b,true)).join('')}
-    ${sup?`<div class="card" style="background:var(--y)"><h3>🏦 Bank wallet: ${S.bank}🪙</h3><div class="row"><input id="bka" type="number" min="1" placeholder="tokens" style="width:110px"><input id="bkr" placeholder="Reason (optional)" style="flex:1"></div><div class="row"><button class="g" onclick="bankAdj(1)">➕ Add to bank</button><button class="r" onclick="bankAdj(-1)">➖ Remove</button></div></div>
+    ${staff?`<div class="card" style="background:var(--y)"><h3>🏦 Bank wallet: ${S.bank}🪙</h3><div class="row"><input id="bka" type="number" min="1" placeholder="tokens" style="width:110px"><input id="bkr" placeholder="Reason (optional)" style="flex:1"></div><div class="row"><button class="g" onclick="bankAdj(1)">➕ Add to bank</button><button class="r" onclick="bankAdj(-1)">➖ Remove</button></div></div>
     <div class="card"><h3>🆘 Rescue loans</h3><div class="mut">Lend from the bank to a broke player. Counts against their ranking until repaid.</div><div class="row"><select id="lp">${po}</select><input id="la" type="number" min="1" placeholder="amount" value="200" style="width:100px"><button class="c" onclick="loan()">Give loan</button></div>
     ${S.players.filter(p=>p.loan>0).map(p=>`<div class="ln"><span>${esc(p.name)} owes <b>${p.loan}</b></span><button onclick="repay(${p.id})">Repay</button></div>`).join('')}</div>
-    <div class="card"><h3>🏁 Event settings</h3><div class="row"><span>Max stake per bet</span><input id="ms" type="number" min="0" value="${S.ev.max_stake||0}" style="width:100px"><span class="mut">0 = no limit</span></div>
+    `:''}
+    ${sup?`<div class="card"><h3>🏁 Event settings</h3><div class="row"><span>Max stake per bet</span><input id="ms" type="number" min="0" value="${S.ev.max_stake||0}" style="width:100px"><span class="mut">0 = no limit</span></div>
     <div class="mut" style="margin-top:10px">Prizes are optional real-world rewards (e.g. “Chocolate box”). They show under the winners’ names on the podium and in the ceremony. The winners themselves are picked automatically from the leaderboard.</div><div class="row"><input id="pz1" placeholder="🥇 1st prize (optional)" value="${esc(pz[0]||'')}" style="width:100%"><input id="pz2" placeholder="🥈 2nd prize (optional)" value="${esc(pz[1]||'')}" style="width:100%"><input id="pz3" placeholder="🥉 3rd prize (optional)" value="${esc(pz[2]||'')}" style="width:100%"></div>
     <div class="row"><button class="g" onclick="saveEv()">Save</button>${S.ev.ended?'<button class="c" onclick="ceremony()">🏅 Replay ceremony</button>':''}${S.ev.ended?'<button onclick="endEv(false)">Reopen event</button>':'<button class="r" onclick="endEv(true)">🏁 End event</button>'}</div></div>`:''}
     <div class="card"><h3>💾 Backup</h3><div class="mut">Download a copy in case anything goes wrong mid-party.</div><div class="row"><button onclick="bkBal()">Balances CSV</button><button onclick="bkLed()">Full history CSV</button></div></div>
-    ${sup?`<div class="card"><h3>Players</h3>${byName().map(p=>`<div class="ln"><span>${esc(p.name)} <small class="mut">${p.balance}🪙</small></span><button class="r" style="padding:2px 8px" onclick="rmp(${p.id})">✕</button></div>`).join('')}</div>
-    <div class="card" style="background:var(--r)"><h3>🧹 Start clean</h3><div class="mut" style="color:#111">Wipe test data before the real event.</div><div class="row"><button onclick="resetEv(true)">Reset tokens &amp; bets (keep players)</button><button onclick="resetEv(false)">Delete everything</button></div></div>`:''}`;
+    ${staff?`<div class="card"><h3>Players</h3>${byName().map(p=>`<div class="ln"><span>${esc(p.name)} <small class="mut">${p.balance}🪙</small></span><button class="r" style="padding:2px 8px" onclick="rmp(${p.id})">✕</button></div>`).join('')}</div>
+    `:''}
+    ${sup?`<div class="card" style="background:var(--r)"><h3>🧹 Start clean</h3><div class="mut" style="color:#111">Wipe test data before the real event.</div><div class="row"><button onclick="resetEv(true)">Reset tokens &amp; bets (keep players)</button><button onclick="resetEv(false)">Delete everything</button></div></div>`:''}`;
   }
   const tabs=[['home','🏠','Home'],['people','👥','People'],['eco','💱','Economy'],['bets','🎲','Bets'],['host',staff?'🎮':'🔑','Host']];
-  $('#app').innerHTML=`<div class="top"><h1>PARTY BANK</h1><div class="row" style="margin:0">${staff?`<span class="badge ${role}">${sup?'👑 Super':'🤝 Co-host'}</span>`:''}<span class="coin">🏦 ${S.bank}🪙</span></div></div><div class="wrap">${v}</div><nav>${tabs.map(t=>`<button class="${tab===t[0]?'on':''}" onclick="tab='${t[0]}';render()"><span>${t[1]}</span>${t[2]}</button>`).join('')}</nav>`;
+  $('#app').innerHTML=`<div class="top"><h1>PARTY BANK</h1><div class="row" style="margin:0">${staff?`<span class="badge ${role}">${sup?'👑 Super':'🤝 Co-host'}</span>`:''}${dotH()}${sndH()}<span class="coin">🏦 ${S.bank}🪙</span></div></div><div class="wrap">${v}</div><nav>${tabs.map(t=>`<button class="${tab===t[0]?'on':''}" onclick="tab='${t[0]}';render()"><span>${t[1]}</span>${t[2]}</button>`).join('')}</nav>`;
   for(const id in m){const el=document.getElementById(id);if(el){if(el.type==='checkbox')el.checked=m[id];else el.value=m[id]}}
   if(fid){const el=document.getElementById(fid);if(el){el.focus();try{el.setSelectionRange(ss,ss)}catch(e){}}}
 }
