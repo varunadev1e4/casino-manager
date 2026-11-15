@@ -158,11 +158,13 @@ window.renp=async id=>{const old=nm(id),n=await ask('Rename <b>'+esc(old)+'</b> 
 window.rmp=async id=>{if(await ask('Remove <b>'+esc(nm(id))+'</b> from the party?',{ok:'Remove',cls:'r'}))rpc('remove_player',{p_id:id})};
 const picked=()=>[...document.querySelectorAll('input[id^=pk]:checked')].map(x=>+x.id.slice(2));
 window.pickAll=v=>document.querySelectorAll('input[id^=pk]').forEach(x=>x.checked=v);
-window.preset=(d,r)=>{$('#ad').value=d;$('#ar').value=r};
-window.adj=async()=>{const ids=picked(),d=parseInt($('#ad').value);
-  if(!ids.length)return toast('Tick at least one player',1);if(!d)return toast('Enter an amount',1);
-  if(await ask(`${d>0?'Give':'Deduct'} <b>${Math.abs(d)}</b> tokens ${d>0?'to':'from'} <b>${ids.length}</b> player(s)?`,{ok:d>0?'Give':'Deduct',cls:d>0?'g':'r'}))
-    if(await rpc('adjust',{p_players:ids,p_delta:d,p_reason:$('#ar').value.trim()}))pickAll(false)};
+const ELK={late:{r:'Late arrival',d:-200,ic:'⏰'},early:{r:'Early bird bonus',d:100,ic:'🐦'}};
+const elDone=(id,k)=>S.ledger.some(l=>l.player_id===id&&l.reason===ELK[k].r&&l.adj_batch&&!l.undone);
+window.earlyLate=async k=>{const ids=picked(),E=ELK[k];if(!ids.length)return toast('Tick at least one player',1);
+  const ok=ids.filter(i=>!elDone(i,k)),skip=ids.filter(i=>elDone(i,k));
+  if(!ok.length)return toast('Already done once for '+(skip.length>1?'all of them':nm(skip[0])),1);
+  if(await ask(`${E.ic} ${k==='late'?'Late arrival: deduct':'Early bird: give'} <b>${Math.abs(E.d)}</b> tokens ${k==='late'?'from':'to'} <b>${ok.length}</b> player(s)?${skip.length?`<div class="mut">Skipping (already done once): ${skip.map(i=>esc(nm(i))).join(', ')}</div>`:''}`,{ok:k==='late'?'Deduct':'Give',cls:k==='late'?'r':'g'}))
+    if(await rpc('early_late',{p_players:ok,p_kind:k}))pickAll(false)};
 function lastAdj(){const r=S.ledger.filter(l=>l.adj_batch&&!l.undone);if(!r.length)return null;
   const bt=Math.max(...r.map(l=>l.adj_batch)),rows=r.filter(l=>l.adj_batch===bt),bk=rows.some(x=>!x.player_id);
   return{txt:`${esc(rows[0].reason)} · ${bk?'Bank':rows.length+' player(s)'} · ${sg(rows[0].delta)}`}}
@@ -728,10 +730,9 @@ function render(){
     ${sup?'':`<div class="card" style="background:var(--y)"><b>🤝 Co-host mode</b><div class="mut" style="opacity:.8">You can do everything except <b>Event settings</b> (prizes, max stake, end event) and <b>Start clean</b> (reset / delete everything). Those two are super-admin only.</div></div>`}
     ${S.ev.ended?`<div class="card" style="background:var(--g)"><b>🏁 Event ended</b><div class="mut" style="opacity:.8">New bets are blocked.${sup?' Reopen it from Event settings below.':''}</div></div>`:''}
     <div class="card" style="background:var(--c)"><h3>➕ Add players</h3><div class="mut" style="opacity:.8">One name per line. Each gets ${START} tokens.</div><div class="row"><textarea id="np" placeholder="Ravi&#10;Anita&#10;Kiran"></textarea></div><div class="row"><button class="g" onclick="addp()">Add to party</button></div></div>
-    ${staff?`<div class="card"><h3>💰 Add / deduct tokens</h3><div class="row">${byName().map(p=>`<label class="chip"><input type="checkbox" id="pk${p.id}">${esc(p.name)} · ${p.balance}</label>`).join('')||'<span class="mut">No players yet</span>'}</div>
+    ${staff?`<div class="card"><h3>💰 Early / late tokens</h3><div class="row">${byName().map(p=>`<label class="chip"><input type="checkbox" id="pk${p.id}">${esc(p.name)} · ${p.balance}${elDone(p.id,'late')?' ⏰':''}${elDone(p.id,'early')?' 🐦':''}</label>`).join('')||'<span class="mut">No players yet</span>'}</div>
     <div class="row"><button onclick="pickAll(true)">Select all</button><button onclick="pickAll(false)">Clear</button></div>
-    <div class="row"><button class="r" onclick="preset(-200,'Late arrival')">⏰ Late −200</button><button class="g" onclick="preset(100,'Early bird bonus')">🐦 Early +100</button></div>
-    <div class="row"><input id="ad" type="number" placeholder="+/- tokens" style="width:120px"><input id="ar" placeholder="Reason" style="flex:1"><button class="g" onclick="adj()">Apply</button></div>
+    <div class="row"><button class="r" onclick="earlyLate('late')">⏰ Late −200</button><button class="g" onclick="earlyLate('early')">🐦 Early +100</button></div><div class="mut">Each person can get Late and Early once only. ⏰ / 🐦 next to a name = already applied.</div>
     <div class="row"><button onclick="undoAdj()"${la?'':' disabled'}>↩ Undo last adjustment</button><span class="mut">${la?la.txt:'Nothing to undo yet'}</span></div></div>`:''}
     <div class="card" style="background:var(--v)"><h3 style="color:#fff">⚔️ New duel</h3><div class="mut" style="color:#fff">Pick a player, an opponent (or the Bank) and a stake. Winner gets double. Max stake: ${S.ev.max_stake||'no limit'}.</div><div class="row"><select id="vg">${GAMES.map(g=>`<option>${esc(g)}</option>`).join('')}</select><input id="vs" type="number" min="1" placeholder="stake" style="width:100px"></div><div class="row">${[50,100,250,500].map(n=>`<button class="c" onclick="qs(${n})"${S.ev.max_stake>0&&n>S.ev.max_stake?' disabled':''}>${n}</button>`).join('')}</div><div class="row">${pickH('a')}<b style="color:#fff">VS</b>${pickH('b')}</div><div class="row"><input id="vt" placeholder="Title (optional)" style="width:100%"></div><div class="row"><button class="g" onclick="mkduel()">Start duel</button></div></div>
     <h2>Live bets</h2>${open.map(b=>betCard(b,true)).join('')||'<div class="card">No live bets</div>'}${finishedSec(done,true)}

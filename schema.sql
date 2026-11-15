@@ -103,14 +103,36 @@ begin perform need(p_code,'helper');
   delete from players where id=p_id;
 end $$;
 
+-- Early / Late buttons: fixed amounts (+100 / -200), once per player each. Replaces free-typed adjustments.
+create or replace function early_late(p_code text, p_players bigint[], p_kind text) returns int language plpgsql security definer set search_path=public as $$
+declare x bigint; old int; d int; amt int; r text; bt bigint:=nextval('adj_seq'); n int:=0;
+begin perform need(p_code,'helper');
+  if p_kind='late' then amt:=-200; r:='Late arrival';
+  elsif p_kind='early' then amt:=100; r:='Early bird bonus';
+  else raise exception 'Unknown type'; end if;
+  foreach x in array p_players loop
+    if exists(select 1 from ledger where player_id=x and reason=r and adj_batch is not null and not undone) then continue; end if;
+    select balance into old from players where id=x for update;
+    if not found then continue; end if;
+    d:=greatest(old+amt,0)-old;
+    if d=0 then continue; end if;
+    update players set balance=old+d where id=x;
+    insert into ledger(player_id,delta,reason,adj_batch) values(x,d,r,bt);
+    n:=n+1;
+  end loop;
+  if n=0 then raise exception 'Nobody eligible - they already got this once'; end if;
+  return n;
+end $$;
+
+-- Free-typed adjustments are now super-admin only (co-hosts can no longer call this directly).
 create or replace function adjust(p_code text, p_players bigint[], p_delta int, p_reason text) returns void language plpgsql security definer set search_path=public as $$
 declare x bigint; old int; d int; bt bigint:=nextval('adj_seq'); r text:=coalesce(nullif(trim(p_reason),''),'Host adjustment');
-begin perform need(p_code,'helper');
+begin perform need(p_code,'super');
   if coalesce(p_delta,0)=0 then raise exception 'Enter an amount'; end if;
   foreach x in array p_players loop
     select balance into old from players where id=x for update;
     if not found then continue; end if;
-    d:=greatest(old+p_delta,0)-old;           -- balance never goes below 0
+    d:=greatest(old+p_delta,0)-old;
     if d=0 then continue; end if;
     update players set balance=old+d where id=x;
     insert into ledger(player_id,delta,reason,adj_batch) values(x,d,r,bt);
