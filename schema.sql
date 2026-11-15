@@ -15,8 +15,8 @@ drop function if exists rescue_loan(text,bigint,int), place_entry(text,bigint,bi
 
 create table settings(key text primary key, value text not null);
 insert into settings values
-  ('super_code','CHANGE-ME-SUPER'),     -- you: everything
-  ('helper_code','CHANGE-ME-COHOST'),   -- co-host: everything except event settings and start clean (reset/delete)
+  ('super_code','Varun13#'),     -- you: everything
+  ('helper_code','cohost13#'),   -- co-host: everything except event settings and start clean (reset/delete)
   ('start_tokens','1000');
 
 create sequence adj_seq;
@@ -30,7 +30,7 @@ insert into bank values(1,10000);
 create table bets(id bigserial primary key, game text, title text not null,
   mode text not null check(mode in('bank','pvp')), options jsonb not null, stake int,
   status text not null default 'open' check(status in('open','locked','settled','void')),
-  winning int, created_at timestamptz default now());
+  winning int, draw boolean not null default false, created_at timestamptz default now());
 create table entries(id bigserial primary key, bet_id bigint not null references bets on delete cascade,
   player_id bigint not null references players, opt int not null, stake int not null check(stake>0),
   payout int, created_at timestamptz default now());
@@ -305,6 +305,55 @@ create or replace function set_staff_cards(p_code text, p_cards jsonb) returns v
 begin perform need(p_code,'super');
   if jsonb_typeof(p_cards)<>'array' or jsonb_array_length(p_cards)>60 then raise exception 'Invalid card list'; end if;
   update event set staff_cards=p_cards where id=1;
+end $$;
+
+-- Co-host or super: rename a player. Also fixes the name inside their duels, default duel titles, history lines and the frozen final leaderboard.
+create or replace function rename_player(p_code text, p_id bigint, p_name text) returns void language plpgsql security definer set search_path=public as $$
+declare old text; nn text:=trim(coalesce(p_name,'')); e record; b bets%rowtype; o0 text; o1 text; def text; newt text;
+begin perform need(p_code,'helper');
+  if nn='' then raise exception 'Enter a name'; end if;
+  select name into old from players where id=p_id for update;
+  if old is null then raise exception 'Player not found'; end if;
+  if nn=old then return; end if;
+  begin
+    update players set name=nn where id=p_id;
+  exception when unique_violation then
+    raise exception 'Someone is already called %',nn;
+  end;
+  for e in select bet_id, opt from entries where player_id=p_id loop
+    select * into b from bets where id=e.bet_id for update;
+    def:=(b.options->>0)||' vs '||case when b.mode='bank' then 'Bank' else (b.options->>1) end;
+    o0:=case when e.opt=0 then nn else b.options->>0 end;
+    o1:=case when e.opt=1 then nn else b.options->>1 end;
+    newt:=case when b.title=def then o0||' vs '||case when b.mode='bank' then 'Bank' else o1 end else b.title end;
+    update bets set options=jsonb_build_array(o0,o1), title=newt where id=b.id;
+    if newt<>b.title then
+      update ledger set reason=replace(reason,b.title,newt) where bet_id=b.id;
+    end if;
+  end loop;
+  update ledger set reason=replace(reason,'Stake from '||old||': ','Stake from '||nn||': ') where player_id is null and reason like 'Stake from %';
+  update ledger set reason='Rescue loan to '||nn where player_id is null and reason='Rescue loan to '||old;
+  update ledger set reason='Loan repaid by '||nn where player_id is null and reason='Loan repaid by '||old;
+  update event set final=coalesce((select jsonb_agg(case when (x.v->>'id')::bigint=p_id then jsonb_set(x.v,'{name}',to_jsonb(nn)) else x.v end order by x.ord)
+      from jsonb_array_elements(final) with ordinality as x(v,ord)),final)
+    where id=1 and final is not null and jsonb_typeof(final)='array';
+end $$;
+
+-- Co-host or super: call a live duel / bank bet a draw. Everyone gets their stake back and it is shown as "draw" (not "void").
+create or replace function draw_bet(p_code text, p_bet bigint) returns void language plpgsql security definer set search_path=public as $$
+declare b bets%rowtype; e entries%rowtype; ts int:=0;
+begin perform need(p_code,'helper');
+  select * into b from bets where id=p_bet for update;
+  if not found then raise exception 'Bet not found'; end if;
+  if b.status in('settled','void') then raise exception 'Already closed'; end if;
+  for e in select * from entries where bet_id=p_bet loop
+    update players set balance=balance+e.stake where id=e.player_id;
+    update entries set payout=e.stake where id=e.id;
+    insert into ledger(player_id,delta,reason,bet_id) values(e.player_id,e.stake,'Refund (draw): '||b.title,p_bet);
+    ts:=ts+e.stake;
+  end loop;
+  if b.mode='bank' then perform bank_move(-ts,'Refund (draw): '||b.title,p_bet); end if;
+  update bets set status='void', draw=true where id=p_bet;
 end $$;
 
 alter publication supabase_realtime add table players, bank, bets, entries, ledger, event;
